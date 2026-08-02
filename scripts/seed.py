@@ -90,6 +90,13 @@ CATALOG_ITEMS = [
         "stock": 22,
         "category": "electricidad",
     },
+    {
+        "name": "Pegante para madera",
+        "description": "Adhesivo blanco de alta resistencia para union de madera, secado en 30 minutos, resistencia total en 24 horas.",
+        "price": 22000,
+        "stock": 35,
+        "category": "adhesivos",
+    },
 ]
 
 POLICIES = [

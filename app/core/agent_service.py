@@ -20,6 +20,10 @@ LOOP_EXHAUSTED_REPLY = (
     "Disculpa, no logré resolver tu consulta por este medio. Ya marqué la "
     "conversación para que un miembro del equipo te contacte y te ayude."
 )
+EMPTY_MESSAGE_REPLY = (
+    "Hola! Parece que tu mensaje llegó vacío. ¿En qué puedo ayudarte? Contame qué "
+    "producto o información estás buscando."
+)
 
 BASE_INSTRUCTIONS = """Eres el asistente de atención al cliente de este negocio y atiendes por chat.
 
@@ -107,6 +111,20 @@ def handle_message(
         session_id = repository.create_session(business_id, user_identifier)["id"]
 
     repository.log_message(session_id, role="user", content=user_message)
+
+    # Un mensaje vacio/solo-espacios nunca llega a Claude: get_history() descarta
+    # contenido vacio al reconstruir el historial (filtro `if row.get("content")`),
+    # asi que la lista de mensajes quedaria vacia y la API rechaza la llamada con
+    # "messages: at least one message is required". Se corta antes de intentarlo.
+    if not user_message.strip():
+        reply = EMPTY_MESSAGE_REPLY
+        repository.log_message(session_id, role="assistant", content=reply)
+        session = repository.get_session(session_id)
+        return {
+            "session_id": session_id,
+            "reply": reply,
+            "status": session["status"] if session else "active",
+        }
 
     # El historial ya incluye el mensaje recién registrado.
     messages: list[dict[str, Any]] = [
