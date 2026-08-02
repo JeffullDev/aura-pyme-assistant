@@ -274,7 +274,7 @@ def list_sessions(business_id: str, status: str | None = None) -> list[dict[str,
     request = (
         get_supabase_client()
         .table("chat_session")
-        .select("id, user_identifier, status, started_at, ended_at")
+        .select("id, user_identifier, status, started_at, ended_at, assigned_agent_name")
         .eq("business_id", business_id)
         .order("started_at", desc=True)
     )
@@ -765,9 +765,89 @@ def list_catalog(business_id: str) -> list[dict[str, Any]]:
     return (
         get_supabase_client()
         .table("catalog_item")
-        .select("id, name, description, price, stock, category")
+        .select("id, name, description, price, stock, category, cost_price")
         .eq("business_id", business_id)
         .order("name")
         .execute()
         .data
     )
+
+
+def get_daily_summary(business_id: str, days: int = 14) -> list[dict[str, Any]]:
+    """Serie diaria de margen de ganancia (subtotal de pedidos menos el costo de
+    la mercancia via order_items.unit_cost) vs costo de tokens, para la grafica
+    de la seccion Resumen (v1.2 parte G). Se agrupa por la fecha (prefijo YYYY-MM-DD
+    de created_at, en UTC): es solo para visualizar una tendencia de rentabilidad,
+    no para horarios de entrega exactos, asi que no vale la pena convertir a
+    BUSINESS_TZ. Trae todo el negocio y filtra el rango en Python (mismo volumen
+    bajo de un MVP que list_orders/get_business_stats) para evitar comparar una
+    columna timestamp sin zona horaria (orders.created_at) contra un valor con
+    zona horaria en el filtro de PostgREST."""
+    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
+    cutoff_key = cutoff_date.isoformat()
+
+    sessions = (
+        get_supabase_client().table("chat_session").select("id").eq("business_id", business_id).execute().data
+    )
+    session_ids = [session["id"] for session in sessions]
+
+    token_cost_by_date: dict[str, float] = {}
+    if session_ids:
+        usage_rows = (
+            get_supabase_client()
+            .table("token_usage")
+            .select("created_at, estimated_cost")
+            .in_("session_id", session_ids)
+            .execute()
+            .data
+        )
+        for row in usage_rows:
+            date_key = row["created_at"][:10]
+            if date_key < cutoff_key:
+                continue
+            token_cost_by_date[date_key] = token_cost_by_date.get(date_key, 0.0) + row["estimated_cost"]
+
+    orders = (
+        get_supabase_client()
+        .table("orders")
+        .select("id, created_at, subtotal, status")
+        .eq("business_id", business_id)
+        .execute()
+        .data
+    )
+    relevant_orders = [
+        order
+        for order in orders
+        if order["status"] != "cancelled" and str(order["created_at"])[:10] >= cutoff_key
+    ]
+
+    margin_by_date: dict[str, float] = {}
+    if relevant_orders:
+        order_ids = [order["id"] for order in relevant_orders]
+        items = (
+            get_supabase_client()
+            .table("order_items")
+            .select("order_id, quantity, unit_cost")
+            .in_("order_id", order_ids)
+            .execute()
+            .data
+        )
+        cost_by_order: dict[str, float] = {}
+        for item in items:
+            unit_cost = item.get("unit_cost") or 0
+            cost_by_order[item["order_id"]] = cost_by_order.get(item["order_id"], 0.0) + unit_cost * item["quantity"]
+
+        for order in relevant_orders:
+            date_key = str(order["created_at"])[:10]
+            margin = float(order["subtotal"]) - cost_by_order.get(order["id"], 0.0)
+            margin_by_date[date_key] = margin_by_date.get(date_key, 0.0) + margin
+
+    dates = [(cutoff_date + timedelta(days=offset)).isoformat() for offset in range(days)]
+    return [
+        {
+            "date": date_key,
+            "margin": round(margin_by_date.get(date_key, 0.0), 2),
+            "token_cost": round(token_cost_by_date.get(date_key, 0.0), 6),
+        }
+        for date_key in dates
+    ]

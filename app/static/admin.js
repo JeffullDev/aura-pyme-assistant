@@ -30,13 +30,34 @@ const ORDER_STATUS_TRANSITIONS = {
   cancelled: [],
 };
 
+const CONVERSATION_CATEGORY_LABELS = {
+  venta: "Terminaron en venta",
+  garantia: "Consultas de garantía",
+  escalada: "Escaladas a un humano",
+  consulta: "Consultas simples",
+};
+
+const VIEW_TITLES = {
+  resumen: "Resumen",
+  conversations: "Conversaciones",
+  orders: "Pedidos",
+  inventory: "Inventario",
+  costs: "Proyección de costos",
+};
+
 const ADMIN_AGENT_NAME_KEY = "aura_admin_agent_name";
 
 const sessionsListEl = document.getElementById("sessions-list");
 const sessionsCountEl = document.getElementById("sessions-count");
 const threadViewEl = document.getElementById("thread-view");
+const threadAssignedBannerEl = document.getElementById("thread-assigned-banner");
 const filtersEl = document.getElementById("status-filters");
 const agentNameInputEl = document.getElementById("agent-name-input");
+const agentNameLabelEl = document.querySelector('label[for="agent-name-input"]');
+const agentNameSaveBtnEl = document.getElementById("agent-name-save-btn");
+const agentNameDisplayEl = document.getElementById("admin-agent-name-display");
+const agentNameValueEl = document.getElementById("admin-agent-name-value");
+const agentNameChangeBtnEl = document.getElementById("agent-name-change-btn");
 const handoffActionsEl = document.getElementById("handoff-actions");
 const takeBtnEl = document.getElementById("take-btn");
 const returnBtnEl = document.getElementById("return-btn");
@@ -45,18 +66,27 @@ const replyFormEl = document.getElementById("reply-form");
 const replyInputEl = document.getElementById("reply-input");
 const conversationsQueueBadgeEl = document.getElementById("conversations-queue-badge");
 const queueFilterBadgeEl = document.getElementById("queue-filter-badge");
+const conversationsSearchInputEl = document.getElementById("conversations-search-input");
 
-const tabButtonsEl = document.querySelectorAll(".tab-btn");
+const sidebarEl = document.getElementById("admin-sidebar");
+const sidebarToggleBtnEl = document.getElementById("sidebar-toggle-btn");
+const sidebarCollapseBtnEl = document.getElementById("sidebar-collapse-btn");
+const pageTitleEl = document.getElementById("admin-page-title");
+
+const tabButtonsEl = document.querySelectorAll(".sidebar-nav-btn");
 const adminViewsEl = document.querySelectorAll(".admin-view");
 
 const kpiRevenueEl = document.getElementById("kpi-revenue");
 const kpiOrdersTotalEl = document.getElementById("kpi-orders-total");
 const kpiConversionEl = document.getElementById("kpi-conversion");
 const kpiAvgTicketEl = document.getElementById("kpi-avg-ticket");
-const kpiConversationsTotalEl = document.getElementById("kpi-conversations-total");
-const kpiEscalatedEl = document.getElementById("kpi-escalated");
 const kpiTokenCostEl = document.getElementById("kpi-token-cost");
 const kpiCostVsRevenueEl = document.getElementById("kpi-cost-vs-revenue");
+const resumenChartEl = document.getElementById("resumen-chart");
+const conversationsBreakdownEl = document.getElementById("conversations-breakdown");
+const conversationsRecentEl = document.getElementById("conversations-recent");
+const verTodasConversacionesBtnEl = document.getElementById("ver-todas-conversaciones-btn");
+const demandaNoCubiertaEl = document.getElementById("demanda-no-cubierta");
 
 const ordersFiltersEl = document.getElementById("orders-filters");
 const ordersBoardEl = document.getElementById("orders-board");
@@ -64,6 +94,7 @@ const ordersBoardEl = document.getElementById("orders-board");
 const inventorySummaryEl = document.getElementById("inventory-summary");
 const inventoryBodyEl = document.getElementById("inventory-body");
 const inventoryTableEl = document.getElementById("inventory-table");
+const inventorySearchInputEl = document.getElementById("inventory-search-input");
 
 let currentStatus = "";
 let currentOrderStatus = "";
@@ -72,6 +103,9 @@ let sessionsById = {};
 let threadPollTimer = null;
 let inventoryItems = [];
 let inventorySort = { key: "name", desc: false };
+let allSessionsCache = [];
+const sessionMessagesCache = {};
+let conversationsSearchDebounceTimer = null;
 
 function formatDate(isoString) {
   if (!isoString) return "—";
@@ -89,14 +123,22 @@ function formatTokens(value) {
   return (value ?? 0).toLocaleString("es-CO");
 }
 
-// Los pedidos se cobran en pesos (COP); el costo de tokens se factura en
-// dolares (formatCost). Nunca se mezclan como si fueran la misma unidad.
+// Los pedidos se cobran en pesos (COP); formatCopWithUsd (usado para el costo
+// de tokens en el Resumen) siempre muestra el equivalente en COP primero y el
+// monto real en USD entre parentesis, usando la misma tasa ROI_USD_TO_COP que
+// ya usa la calculadora de costos (roi_calculator.js), sin duplicarla.
 function formatCOP(value) {
   return `$${Math.round(value ?? 0).toLocaleString("es-CO")}`;
 }
 
+function formatCopWithUsd(usdValue) {
+  const cop = (usdValue ?? 0) * ROI_USD_TO_COP;
+  return `${roiFormatCop(cop)} (${roiFormatUsd(usdValue ?? 0)})`;
+}
+
 function formatPercent(value) {
-  return `${(value ?? 0).toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  if (value === null || value === undefined) return "—";
+  return `${value.toLocaleString("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 async function fetchJson(url) {
@@ -108,7 +150,9 @@ async function fetchJson(url) {
 }
 
 function renderSessions(sessions) {
-  sessionsById = {};
+  // No se resetea sessionsById por completo: si una busqueda filtra la sesion
+  // seleccionada fuera de la lista visible, sessionsById[selectedSessionId]
+  // debe seguir disponible para el hilo y los controles de handoff.
   sessions.forEach((session) => {
     sessionsById[session.id] = session;
   });
@@ -130,11 +174,17 @@ function renderSessions(sessions) {
       row.classList.add("selected");
     }
 
+    const assignedLabel =
+      session.status === "assigned" && session.assigned_agent_name
+        ? `<span class="session-assigned-label">Asignada a ${escapeHtml(session.assigned_agent_name)}</span>`
+        : "";
+
     row.innerHTML = `
       <div class="session-row-main">
         <span class="session-user">${escapeHtml(session.user_identifier)}</span>
         <span class="status-badge status-${session.status}">${STATUS_LABELS[session.status] || session.status}</span>
       </div>
+      ${assignedLabel}
       <div class="session-row-meta">
         <span>${formatDate(session.started_at)}</span>
         <span>${session.message_count} mensaje${session.message_count === 1 ? "" : "s"}</span>
@@ -218,6 +268,9 @@ function switchAdminView(view) {
   adminViewsEl.forEach((section) => {
     section.hidden = section.id !== `view-${view}`;
   });
+  pageTitleEl.textContent = VIEW_TITLES[view] || "";
+  sidebarEl.classList.remove("open");
+
   if (view === "resumen") loadSummary();
   if (view === "orders") loadOrders();
   if (view === "inventory") loadInventory();
@@ -231,6 +284,14 @@ function switchAdminView(view) {
 
 tabButtonsEl.forEach((btn) => {
   btn.addEventListener("click", () => switchAdminView(btn.dataset.view));
+});
+
+sidebarToggleBtnEl.addEventListener("click", () => {
+  sidebarEl.classList.toggle("open");
+});
+
+sidebarCollapseBtnEl.addEventListener("click", () => {
+  sidebarEl.classList.toggle("collapsed");
 });
 
 async function loadStats() {
@@ -247,6 +308,80 @@ async function loadStats() {
   }
 }
 
+function renderConversationsBreakdown(stats) {
+  const byCategory = stats.conversations_by_category || {};
+  const rows = ["venta", "garantia", "escalada", "consulta"]
+    .map((cat) => {
+      const count = byCategory[cat] || 0;
+      return `<div class="breakdown-row"><span class="breakdown-label">${CONVERSATION_CATEGORY_LABELS[cat]}</span><span class="breakdown-value">${count}</span></div>`;
+    })
+    .join("");
+
+  conversationsBreakdownEl.innerHTML = `
+    <div class="breakdown-total"><span class="breakdown-total-value">${formatTokens(stats.total_conversations)}</span> conversaciones totales</div>
+    <div class="breakdown-rows">${rows}</div>
+  `;
+}
+
+async function loadRecentConversations() {
+  conversationsRecentEl.innerHTML = '<p class="admin-empty">Cargando...</p>';
+  try {
+    const sessions = await fetchJson("/admin/sessions");
+    const recent = sessions.slice(0, 3);
+    if (recent.length === 0) {
+      conversationsRecentEl.innerHTML = '<p class="admin-empty">Todavía no hay conversaciones.</p>';
+      return;
+    }
+    conversationsRecentEl.innerHTML = recent
+      .map(
+        (session) => `
+          <div class="recent-conversation-row">
+            <span class="recent-conversation-user">${escapeHtml(session.user_identifier)}</span>
+            <span class="status-badge status-${session.status}">${STATUS_LABELS[session.status] || session.status}</span>
+            <span class="recent-conversation-date">${formatDate(session.started_at)}</span>
+          </div>
+        `
+      )
+      .join("");
+  } catch (err) {
+    conversationsRecentEl.innerHTML = '<p class="admin-empty admin-error">No se pudieron cargar las conversaciones recientes.</p>';
+  }
+}
+
+async function loadUncoveredDemand() {
+  demandaNoCubiertaEl.innerHTML = '<p class="admin-empty">Cargando...</p>';
+  try {
+    const items = await fetchJson("/admin/demanda-no-cubierta");
+    const top5 = items.slice(0, 5);
+    if (top5.length === 0) {
+      demandaNoCubiertaEl.innerHTML = '<p class="admin-empty">No se ha detectado demanda no cubierta todavía.</p>';
+      return;
+    }
+    demandaNoCubiertaEl.innerHTML = `
+      <ol class="demanda-list">
+        ${top5
+          .map(
+            (item) =>
+              `<li><span class="demanda-term">${escapeHtml(item.term)}</span><span class="demanda-count">${item.count} búsqueda${item.count === 1 ? "" : "s"}</span></li>`
+          )
+          .join("")}
+      </ol>
+    `;
+  } catch (err) {
+    demandaNoCubiertaEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar la demanda no cubierta.</p>';
+  }
+}
+
+async function loadResumenChart() {
+  resumenChartEl.innerHTML = '<p class="admin-empty">Cargando gráfica...</p>';
+  try {
+    const daily = await fetchJson("/admin/resumen-diario");
+    resumenChartEl.innerHTML = buildResumenChart(daily);
+  } catch (err) {
+    resumenChartEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar la gráfica.</p>';
+  }
+}
+
 async function loadSummary() {
   try {
     const stats = await fetchJson("/admin/stats");
@@ -254,16 +389,21 @@ async function loadSummary() {
     kpiOrdersTotalEl.textContent = formatTokens(stats.total_orders);
     kpiConversionEl.textContent = `Tasa de conversión: ${formatPercent(stats.conversion_rate)}`;
     kpiAvgTicketEl.textContent = formatCOP(stats.avg_ticket);
-    kpiConversationsTotalEl.textContent = formatTokens(stats.total_conversations);
-    kpiEscalatedEl.textContent = `${formatTokens(stats.escalated_conversations)} escalada${stats.escalated_conversations === 1 ? "" : "s"} a un humano`;
-    kpiTokenCostEl.textContent = formatCost(stats.total_estimated_cost);
-    kpiCostVsRevenueEl.textContent = `Generó ${formatCOP(stats.revenue_total)} en pedidos — costó ${formatCost(stats.total_estimated_cost)} en tokens (USD)`;
+    kpiTokenCostEl.textContent = formatCopWithUsd(stats.total_estimated_cost);
+    kpiCostVsRevenueEl.textContent = `Generó ${formatCOP(stats.revenue_total)} en pedidos — costó ${formatCopWithUsd(stats.total_estimated_cost)} en tokens`;
+    renderConversationsBreakdown(stats);
   } catch (err) {
     document.querySelectorAll("#view-resumen .kpi-value").forEach((el) => {
       el.textContent = "—";
     });
   }
+
+  loadResumenChart();
+  loadRecentConversations();
+  loadUncoveredDemand();
 }
+
+verTodasConversacionesBtnEl.addEventListener("click", () => switchAdminView("conversations"));
 
 async function refreshQueueBadge() {
   try {
@@ -283,37 +423,105 @@ function overdueOrder(order) {
   return new Date(order.estimated_delivery_at).getTime() < Date.now();
 }
 
-function renderOrders(orders) {
-  if (orders.length === 0) {
-    ordersBoardEl.innerHTML = '<p class="admin-empty">No hay pedidos con este filtro.</p>';
-    return;
-  }
+// ---------- Pedidos: antiguedad, agrupacion y badges ----------
 
-  ordersBoardEl.innerHTML = "";
+const ORDER_AGE_MAX_HOURS = 48;
+const ORDER_AGE_COLOR_FROM = [220, 252, 231]; // verde (recien llegado), = --agent-bg
+const ORDER_AGE_COLOR_TO = [254, 226, 226]; // rojo suave (lleva rato esperando)
+
+function orderAgeBackground(order) {
+  const hours = Math.max(0, (Date.now() - new Date(order.created_at).getTime()) / 3600000);
+  const fraction = Math.min(1, hours / ORDER_AGE_MAX_HOURS);
+  const rgb = ORDER_AGE_COLOR_FROM.map((component, i) =>
+    Math.round(component + (ORDER_AGE_COLOR_TO[i] - component) * fraction)
+  );
+  return `rgb(${rgb.join(",")})`;
+}
+
+function formatElapsedSince(isoString) {
+  const ms = Date.now() - new Date(isoString).getTime();
+  if (ms <= 0) return "menos de 1 min";
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (days === 0 && minutes > 0) parts.push(`${minutes}min`);
+  return parts.length ? parts.join(" ") : "menos de 1 min";
+}
+
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Orden de grupos = del mas antiguo al mas reciente (el mas urgente de
+// despachar primero), NO el orden cronologico habitual de un inbox.
+const ORDER_GROUP_KEYS = ["anteriores", "esta_semana", "ayer", "hoy"];
+const ORDER_GROUP_TITLES = {
+  anteriores: "Anteriores",
+  esta_semana: "Esta semana",
+  ayer: "Ayer",
+  hoy: "Hoy",
+};
+
+function orderDateGroup(order) {
+  const createdDay = startOfDay(order.created_at).getTime();
+  const today = startOfDay(new Date()).getTime();
+  const diffDays = Math.round((today - createdDay) / 86400000);
+
+  if (diffDays <= 0) return "hoy";
+  if (diffDays === 1) return "ayer";
+  if (diffDays <= 7) return "esta_semana";
+  return "anteriores";
+}
+
+function groupAndSortOrders(orders) {
+  const groups = {};
+  ORDER_GROUP_KEYS.forEach((key) => {
+    groups[key] = [];
+  });
   orders.forEach((order) => {
-    const card = document.createElement("article");
-    card.className = "order-card";
+    groups[orderDateGroup(order)].push(order);
+  });
+  ORDER_GROUP_KEYS.forEach((key) => {
+    groups[key].sort((a, b) => new Date(a.estimated_delivery_at) - new Date(b.estimated_delivery_at));
+  });
+  return groups;
+}
 
-    const itemsHtml = order.items
-      .map((item) => `<li>${item.quantity}× ${escapeHtml(item.product_name)} — ${formatCOP(item.subtotal)}</li>`)
-      .join("");
+function renderOrderCard(order) {
+  const itemsHtml = order.items
+    .map((item) => `<li>${item.quantity}× ${escapeHtml(item.product_name)} — ${formatCOP(item.subtotal)}</li>`)
+    .join("");
 
-    const overdue = overdueOrder(order);
-    const etaClass = overdue ? "order-eta order-eta-overdue" : "order-eta";
-    const etaLabel = overdue ? "Hora estimada superada" : "Entrega estimada";
+  const overdue = overdueOrder(order);
+  const etaClass = overdue ? "order-eta order-eta-overdue" : "order-eta";
+  const etaLabel = overdue ? "Hora estimada superada" : "Entrega estimada";
 
-    const actions = (ORDER_STATUS_TRANSITIONS[order.status] || [])
-      .map((next) => {
-        const secondary = next === "cancelled" ? " btn-secondary" : "";
-        return `<button type="button" class="btn-handoff${secondary}" data-order-id="${order.id}" data-next-status="${next}">${ORDER_STATUS_LABELS[next]}</button>`;
-      })
-      .join("");
+  const actions = (ORDER_STATUS_TRANSITIONS[order.status] || [])
+    .map((next) => {
+      const secondary = next === "cancelled" ? " btn-secondary" : "";
+      return `<button type="button" class="btn-handoff${secondary}" data-order-id="${order.id}" data-next-status="${next}">${ORDER_STATUS_LABELS[next]}</button>`;
+    })
+    .join("");
 
-    card.innerHTML = `
+  const cardClass = overdue ? "order-card order-card-overdue" : "order-card";
+  const cardStyle = overdue ? "" : ` style="background:${orderAgeBackground(order)}"`;
+  const overdueBadge = overdue
+    ? `<span class="order-overdue-badge">RETRASADO · ${formatElapsedSince(order.estimated_delivery_at)} vencido</span>`
+    : "";
+
+  return `
+    <article class="${cardClass}"${cardStyle}>
       <div class="order-card-header">
         <span class="order-reference">#${order.id.slice(0, 8)}</span>
         <span class="status-badge status-${order.status}">${ORDER_STATUS_LABELS[order.status] || order.status}</span>
       </div>
+      ${overdueBadge}
       <div class="order-customer">
         <strong>${escapeHtml(order.customer_name)}</strong>
         <span>${escapeHtml(order.delivery_address)}</span>
@@ -324,10 +532,47 @@ function renderOrders(orders) {
         <span class="${etaClass}">${etaLabel}: ${formatDate(order.estimated_delivery_at)}</span>
       </div>
       ${actions ? `<div class="order-actions">${actions}</div>` : ""}
-    `;
+    </article>
+  `;
+}
 
-    ordersBoardEl.appendChild(card);
-  });
+function renderOrders(orders) {
+  if (orders.length === 0) {
+    ordersBoardEl.innerHTML = '<p class="admin-empty">No hay pedidos con este filtro.</p>';
+    return;
+  }
+
+  const groups = groupAndSortOrders(orders);
+  const sectionsHtml = ORDER_GROUP_KEYS.filter((key) => groups[key].length > 0)
+    .map(
+      (key) => `
+        <section class="orders-date-group">
+          <h3 class="orders-date-group-title">${ORDER_GROUP_TITLES[key]}</h3>
+          <div class="orders-board">${groups[key].map(renderOrderCard).join("")}</div>
+        </section>
+      `
+    )
+    .join("");
+
+  ordersBoardEl.innerHTML = sectionsHtml;
+}
+
+async function refreshOrdersBadges() {
+  try {
+    const orders = await fetchJson("/admin/orders");
+    const counts = { pending: 0, confirmed: 0, in_transit: 0 };
+    orders.forEach((order) => {
+      if (order.status in counts) counts[order.status] += 1;
+    });
+    Object.keys(counts).forEach((status) => {
+      const el = document.getElementById(`orders-badge-${status}`);
+      if (!el) return;
+      el.textContent = String(counts[status]);
+      el.hidden = counts[status] === 0;
+    });
+  } catch (err) {
+    // Silencioso: los badges simplemente no se actualizan en este ciclo.
+  }
 }
 
 async function loadOrders() {
@@ -339,6 +584,7 @@ async function loadOrders() {
   } catch (err) {
     ordersBoardEl.innerHTML = '<p class="admin-empty admin-error">No se pudieron cargar los pedidos.</p>';
   }
+  refreshOrdersBadges();
 }
 
 ordersFiltersEl.addEventListener("click", (event) => {
@@ -363,10 +609,39 @@ ordersBoardEl.addEventListener("click", async (event) => {
   }
 });
 
+// ---------- Inventario ----------
+
 function inventoryAlertClass(stock) {
   if (stock === 0) return "inventory-row-out";
   if (stock <= 4) return "inventory-row-low";
   return "";
+}
+
+function computeMargin(item) {
+  const price = item.price || 0;
+  const cost = item.cost_price;
+  if (cost === null || cost === undefined || price === 0) {
+    return { abs: null, pct: null };
+  }
+  const marginAbs = price - cost;
+  const marginPct = (marginAbs / price) * 100;
+  return { abs: marginAbs, pct: marginPct };
+}
+
+function inventorySortValue(item, key) {
+  if (key === "margin_pct") {
+    const { pct } = computeMargin(item);
+    return pct === null ? -Infinity : pct;
+  }
+  return item[key];
+}
+
+function filterInventoryItems(items) {
+  const term = inventorySearchInputEl.value.trim().toLowerCase();
+  if (!term) return items;
+  return items.filter(
+    (item) => (item.name || "").toLowerCase().includes(term) || (item.category || "").toLowerCase().includes(term)
+  );
 }
 
 function renderInventory() {
@@ -377,16 +652,17 @@ function renderInventory() {
     <span class="status-badge status-escalated">${lowCount} con stock bajo</span>
   `;
 
-  const sorted = [...inventoryItems].sort((a, b) => {
+  const filtered = filterInventoryItems(inventoryItems);
+  const sorted = [...filtered].sort((a, b) => {
     const { key, desc } = inventorySort;
-    const va = a[key];
-    const vb = b[key];
+    const va = inventorySortValue(a, key);
+    const vb = inventorySortValue(b, key);
     const cmp = typeof va === "string" ? va.localeCompare(vb) : va - vb;
     return desc ? -cmp : cmp;
   });
 
   if (sorted.length === 0) {
-    inventoryBodyEl.innerHTML = '<tr><td colspan="4" class="admin-empty">No hay productos en el catálogo.</td></tr>';
+    inventoryBodyEl.innerHTML = '<tr><td colspan="6" class="admin-empty">No hay productos que coincidan.</td></tr>';
     return;
   }
 
@@ -394,10 +670,14 @@ function renderInventory() {
   sorted.forEach((item) => {
     const row = document.createElement("tr");
     row.className = inventoryAlertClass(item.stock);
+    const { abs, pct } = computeMargin(item);
+    const marginCell = abs === null ? "—" : `${formatPercent(pct)} <span class="margin-abs">(${formatCOP(abs)})</span>`;
     row.innerHTML = `
       <td>${escapeHtml(item.name)}</td>
       <td>${escapeHtml(item.category || "—")}</td>
+      <td>${item.cost_price != null ? formatCOP(item.cost_price) : "—"}</td>
       <td>${formatCOP(item.price)}</td>
+      <td>${marginCell}</td>
       <td>${item.stock}</td>
     `;
     inventoryBodyEl.appendChild(row);
@@ -405,12 +685,12 @@ function renderInventory() {
 }
 
 async function loadInventory() {
-  inventoryBodyEl.innerHTML = '<tr><td colspan="4" class="admin-empty">Cargando inventario...</td></tr>';
+  inventoryBodyEl.innerHTML = '<tr><td colspan="6" class="admin-empty">Cargando inventario...</td></tr>';
   try {
     inventoryItems = await fetchJson("/admin/inventory");
     renderInventory();
   } catch (err) {
-    inventoryBodyEl.innerHTML = '<tr><td colspan="4" class="admin-empty admin-error">No se pudo cargar el inventario.</td></tr>';
+    inventoryBodyEl.innerHTML = '<tr><td colspan="6" class="admin-empty admin-error">No se pudo cargar el inventario.</td></tr>';
   }
 }
 
@@ -423,6 +703,54 @@ inventoryTableEl.querySelector("thead").addEventListener("click", (event) => {
     desc: inventorySort.key === key ? !inventorySort.desc : false,
   };
   renderInventory();
+});
+
+inventorySearchInputEl.addEventListener("input", renderInventory);
+
+// ---------- Conversaciones: busqueda por cliente y contenido ----------
+
+function renderFilteredSessions() {
+  const term = conversationsSearchInputEl.value.trim().toLowerCase();
+  if (!term) {
+    renderSessions(allSessionsCache);
+    return;
+  }
+  filterSessionsByTerm(term);
+}
+
+async function filterSessionsByTerm(term) {
+  const toFetch = allSessionsCache.filter((session) => !(session.id in sessionMessagesCache));
+  if (toFetch.length > 0) {
+    sessionsListEl.innerHTML = '<p class="admin-empty">Buscando...</p>';
+    await Promise.all(
+      toFetch.map(async (session) => {
+        try {
+          const messages = await fetchJson(`/admin/sessions/${session.id}/messages`);
+          sessionMessagesCache[session.id] = messages
+            .filter((msg) => msg.content)
+            .map((msg) => msg.content.toLowerCase())
+            .join(" ");
+        } catch (err) {
+          sessionMessagesCache[session.id] = "";
+        }
+      })
+    );
+  }
+
+  // El termino de busqueda pudo cambiar mientras esperabamos los fetch.
+  const currentTerm = conversationsSearchInputEl.value.trim().toLowerCase();
+  if (currentTerm !== term) return;
+
+  const filtered = allSessionsCache.filter((session) => {
+    if (session.user_identifier.toLowerCase().includes(term)) return true;
+    return (sessionMessagesCache[session.id] || "").includes(term);
+  });
+  renderSessions(filtered);
+}
+
+conversationsSearchInputEl.addEventListener("input", () => {
+  clearTimeout(conversationsSearchDebounceTimer);
+  conversationsSearchDebounceTimer = setTimeout(renderFilteredSessions, 250);
 });
 
 function stopThreadPolling() {
@@ -452,10 +780,20 @@ async function loadSessions() {
   sessionsListEl.innerHTML = '<p class="admin-empty">Cargando sesiones...</p>';
   try {
     const url = currentStatus ? `/admin/sessions?status=${currentStatus}` : "/admin/sessions";
-    const sessions = await fetchJson(url);
-    renderSessions(sessions);
+    allSessionsCache = await fetchJson(url);
+    renderFilteredSessions();
   } catch (err) {
     sessionsListEl.innerHTML = '<p class="admin-empty admin-error">No se pudieron cargar las sesiones.</p>';
+  }
+}
+
+function updateThreadAssignedBanner() {
+  const session = sessionsById[selectedSessionId];
+  if (session && session.status === "assigned" && session.assigned_agent_name) {
+    threadAssignedBannerEl.textContent = `Asignada a ${session.assigned_agent_name}`;
+    threadAssignedBannerEl.hidden = false;
+  } else {
+    threadAssignedBannerEl.hidden = true;
   }
 }
 
@@ -464,6 +802,7 @@ function updateHandoffControls() {
   if (!session) {
     handoffActionsEl.hidden = true;
     replyFormEl.hidden = true;
+    threadAssignedBannerEl.hidden = true;
     return;
   }
 
@@ -475,6 +814,7 @@ function updateHandoffControls() {
   returnBtnEl.hidden = !isAssigned;
   closeBtnEl.hidden = isClosed;
   replyFormEl.hidden = !isAssigned;
+  updateThreadAssignedBanner();
 }
 
 async function selectSession(sessionId) {
@@ -518,16 +858,53 @@ async function refreshAfterAction() {
   refreshQueueBadge();
 }
 
-function getAgentName() {
+// ---------- Nombre del asesor: persistente en localStorage ----------
+
+function showAgentNameDisplay(name) {
+  agentNameValueEl.textContent = name;
+  agentNameDisplayEl.hidden = false;
+  agentNameInputEl.hidden = true;
+  agentNameSaveBtnEl.hidden = true;
+  if (agentNameLabelEl) agentNameLabelEl.hidden = true;
+}
+
+function showAgentNameInput() {
+  agentNameDisplayEl.hidden = true;
+  agentNameInputEl.hidden = false;
+  agentNameSaveBtnEl.hidden = false;
+  if (agentNameLabelEl) agentNameLabelEl.hidden = false;
+  agentNameInputEl.focus();
+}
+
+function saveAgentName() {
   const name = agentNameInputEl.value.trim();
   if (!name) {
-    alert("Escribe tu nombre antes de tomar una conversación.");
+    alert("Escribe tu nombre antes de guardarlo.");
     agentNameInputEl.focus();
-    return null;
+    return;
   }
   localStorage.setItem(ADMIN_AGENT_NAME_KEY, name);
+  showAgentNameDisplay(name);
+}
+
+function getAgentName() {
+  const name = (localStorage.getItem(ADMIN_AGENT_NAME_KEY) || "").trim();
+  if (!name) {
+    alert("Escribe y guarda tu nombre en el panel lateral antes de tomar una conversación.");
+    showAgentNameInput();
+    return null;
+  }
   return name;
 }
+
+agentNameSaveBtnEl.addEventListener("click", saveAgentName);
+agentNameInputEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveAgentName();
+  }
+});
+agentNameChangeBtnEl.addEventListener("click", showAgentNameInput);
 
 takeBtnEl.addEventListener("click", async () => {
   const agentName = getAgentName();
@@ -584,7 +961,13 @@ filtersEl.addEventListener("click", (event) => {
   loadSessions();
 });
 
-agentNameInputEl.value = localStorage.getItem(ADMIN_AGENT_NAME_KEY) || "";
+const savedAgentName = localStorage.getItem(ADMIN_AGENT_NAME_KEY);
+if (savedAgentName) {
+  agentNameInputEl.value = savedAgentName;
+  showAgentNameDisplay(savedAgentName);
+} else {
+  showAgentNameInput();
+}
 
 loadSummary();
 loadStats();

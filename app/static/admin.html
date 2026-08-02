@@ -13,240 +13,330 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="admin-body">
-  <div class="admin-page">
-    <header class="admin-header">
-      <div>
-        <h1>Panel de conversaciones</h1>
-        <p class="admin-subtitle">El Tornillo Feliz · vista de solo lectura</p>
+  <div class="admin-shell">
+    <nav class="admin-sidebar" id="admin-sidebar">
+      <div class="admin-sidebar-header">
+        <span class="admin-sidebar-logo">🔧</span>
+        <span class="admin-sidebar-title">El Tornillo Feliz</span>
+        <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Colapsar menú" aria-label="Colapsar menú">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
       </div>
-      <div class="admin-agent-name">
-        <label for="agent-name-input">Tu nombre</label>
-        <input id="agent-name-input" type="text" placeholder="ej. María" autocomplete="off" />
-      </div>
-      <a class="btn-new-conversation" href="/">Ir al chat</a>
-    </header>
 
-    <nav class="admin-tabs" id="admin-tabs">
-      <button class="tab-btn active" data-view="resumen" type="button">Resumen</button>
-      <button class="tab-btn" data-view="conversations" type="button">
-        Conversaciones
-        <span class="nav-badge" id="conversations-queue-badge" hidden>0</span>
-      </button>
-      <button class="tab-btn" data-view="orders" type="button">Pedidos</button>
-      <button class="tab-btn" data-view="inventory" type="button">Inventario</button>
-      <button class="tab-btn" data-view="costs" type="button">Proyección de costos</button>
+      <div class="admin-sidebar-nav">
+        <button class="sidebar-nav-btn active" data-view="resumen" type="button" title="Resumen">
+          <span class="sidebar-nav-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7" /></svg>
+          </span>
+          <span class="sidebar-nav-label">Resumen</span>
+        </button>
+        <button class="sidebar-nav-btn" data-view="conversations" type="button" title="Conversaciones">
+          <span class="sidebar-nav-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 20l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+          </span>
+          <span class="sidebar-nav-label">Conversaciones</span>
+          <span class="nav-badge" id="conversations-queue-badge" hidden>0</span>
+        </button>
+        <button class="sidebar-nav-btn" data-view="orders" type="button" title="Pedidos">
+          <span class="sidebar-nav-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8" /></svg>
+          </span>
+          <span class="sidebar-nav-label">Pedidos</span>
+        </button>
+        <button class="sidebar-nav-btn" data-view="inventory" type="button" title="Inventario">
+          <span class="sidebar-nav-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18" /></svg>
+          </span>
+          <span class="sidebar-nav-label">Inventario</span>
+        </button>
+        <button class="sidebar-nav-btn" data-view="costs" type="button" title="Proyección de costos">
+          <span class="sidebar-nav-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 2.5-1.5c1.4 0 2.5.8 2.5 2s-1 1.7-2.5 2-2.5.8-2.5 2 1.1 2 2.5 2a2.5 2 0 0 0 2.5-1.5" /></svg>
+          </span>
+          <span class="sidebar-nav-label">Proyección de costos</span>
+        </button>
+      </div>
+
+      <div class="admin-sidebar-footer">
+        <div class="admin-agent-name" id="admin-agent-name">
+          <label for="agent-name-input" class="admin-agent-name-label">Tu nombre</label>
+          <input id="agent-name-input" type="text" placeholder="ej. María" autocomplete="off" />
+          <button type="button" id="agent-name-save-btn" class="btn-agent-name-save">Guardar</button>
+          <div class="admin-agent-name-display" id="admin-agent-name-display" hidden>
+            <span class="admin-agent-name-value" id="admin-agent-name-value"></span>
+            <button type="button" id="agent-name-change-btn" class="btn-agent-name-change">Cambiar</button>
+          </div>
+        </div>
+        <a class="btn-new-conversation" href="/">Ir al chat</a>
+      </div>
     </nav>
 
-    <section class="admin-view" id="view-resumen">
-      <div class="kpi-grid">
-        <div class="metric-card kpi-card kpi-card-primary">
-          <span class="metric-label">Ingresos generados por el asistente</span>
-          <span class="metric-value kpi-value" id="kpi-revenue">—</span>
-        </div>
-        <div class="metric-card kpi-card">
-          <span class="metric-label">Pedidos totales</span>
-          <span class="metric-value kpi-value" id="kpi-orders-total">—</span>
-          <span class="kpi-sub" id="kpi-conversion">Tasa de conversión: —</span>
-        </div>
-        <div class="metric-card kpi-card">
-          <span class="metric-label">Ticket promedio</span>
-          <span class="metric-value kpi-value" id="kpi-avg-ticket">—</span>
-        </div>
-        <div class="metric-card kpi-card">
-          <span class="metric-label">Conversaciones totales</span>
-          <span class="metric-value kpi-value" id="kpi-conversations-total">—</span>
-          <span class="kpi-sub" id="kpi-escalated">— escaladas a un humano</span>
-        </div>
-        <div class="metric-card kpi-card">
-          <span class="metric-label">Costo estimado en tokens</span>
-          <span class="metric-value kpi-value" id="kpi-token-cost">—</span>
-          <span class="kpi-sub" id="kpi-cost-vs-revenue">—</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="admin-view" id="view-conversations" hidden>
-      <div class="admin-metrics" id="admin-metrics">
-        <div class="metric-card">
-          <span class="metric-label">Total conversaciones</span>
-          <span class="metric-value" id="metric-total-conversations">—</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-label">Tokens totales</span>
-          <span class="metric-value" id="metric-total-tokens">—</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-label">Costo estimado total</span>
-          <span class="metric-value" id="metric-total-cost">—</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-label">Promedio de tokens / conversación</span>
-          <span class="metric-value" id="metric-avg-tokens">—</span>
-        </div>
-      </div>
-
-      <div class="admin-filters" id="status-filters">
-        <button class="filter-btn active" data-status="">Todas</button>
-        <button class="filter-btn" data-status="active">Activas</button>
-        <button class="filter-btn filter-btn-queue" data-status="escalated">
-          En cola
-          <span class="nav-badge" id="queue-filter-badge" hidden>0</span>
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <button type="button" class="sidebar-toggle-btn" id="sidebar-toggle-btn" aria-label="Abrir menú">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
         </button>
-        <button class="filter-btn" data-status="assigned">Asignadas</button>
-        <button class="filter-btn" data-status="closed">Cerradas</button>
-      </div>
+        <div>
+          <h1 id="admin-page-title">Resumen</h1>
+          <p class="admin-subtitle">El Tornillo Feliz · vista de solo lectura</p>
+        </div>
+      </header>
 
-      <div class="admin-layout">
-        <section class="admin-panel">
-          <div class="admin-panel-header">
-            <h2>Sesiones</h2>
-            <span id="sessions-count" class="admin-count"></span>
+      <main class="admin-content">
+        <section class="admin-view" id="view-resumen">
+          <div class="kpi-grid">
+            <div class="metric-card kpi-card kpi-card-primary">
+              <span class="metric-label">Ingresos generados por el asistente</span>
+              <span class="metric-value kpi-value" id="kpi-revenue">—</span>
+            </div>
+            <div class="metric-card kpi-card">
+              <span class="metric-label">Pedidos totales</span>
+              <span class="metric-value kpi-value" id="kpi-orders-total">—</span>
+              <span class="kpi-sub" id="kpi-conversion">Tasa de conversión: —</span>
+            </div>
+            <div class="metric-card kpi-card">
+              <span class="metric-label">Ticket promedio</span>
+              <span class="metric-value kpi-value" id="kpi-avg-ticket">—</span>
+            </div>
+            <div class="metric-card kpi-card">
+              <span class="metric-label">Costo estimado en tokens</span>
+              <span class="metric-value kpi-value" id="kpi-token-cost">—</span>
+              <span class="kpi-sub" id="kpi-cost-vs-revenue">—</span>
+            </div>
           </div>
-          <div id="sessions-list" class="sessions-list">
-            <p class="admin-empty">Cargando sesiones...</p>
+
+          <div class="card">
+            <h2>Rentabilidad diaria: margen vs. costo del asistente</h2>
+            <span class="hint">Margen de ganancia (ingresos menos el costo de la mercancía vendida) comparado contra el costo de tokens, ambos convertidos a pesos (COP) para que la comparación tenga sentido. Así ves cuánto ganás REALMENTE después de descontar lo que cuesta operar el bot.</span>
+            <div id="resumen-chart" class="resumen-chart">
+              <p class="admin-empty">Cargando gráfica...</p>
+            </div>
+          </div>
+
+          <div class="resumen-secondary-grid">
+            <div class="card">
+              <h2>Conversaciones</h2>
+              <div class="conversations-breakdown" id="conversations-breakdown">
+                <p class="admin-empty">Cargando...</p>
+              </div>
+              <div class="conversations-recent" id="conversations-recent"></div>
+              <button type="button" class="btn-handoff btn-secondary btn-ver-todas" id="ver-todas-conversaciones-btn">Ver todas</button>
+            </div>
+
+            <div class="card">
+              <h2>Demanda no cubierta</h2>
+              <span class="hint">Productos que los clientes pidieron y no tenés en el catálogo. Una oportunidad de compra que se está perdiendo.</span>
+              <div id="demanda-no-cubierta" class="demanda-no-cubierta">
+                <p class="admin-empty">Cargando...</p>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="admin-panel">
-          <div class="admin-panel-header">
-            <h2>Hilo de la conversación</h2>
-            <div class="handoff-actions" id="handoff-actions" hidden>
-              <button id="take-btn" type="button" class="btn-handoff">Tomar conversación</button>
-              <button id="return-btn" type="button" class="btn-handoff btn-secondary" hidden>Devolver al bot</button>
-              <button id="close-btn" type="button" class="btn-handoff btn-secondary" hidden>Cerrar</button>
+        <section class="admin-view" id="view-conversations" hidden>
+          <div class="admin-metrics" id="admin-metrics">
+            <div class="metric-card">
+              <span class="metric-label">Total conversaciones</span>
+              <span class="metric-value" id="metric-total-conversations">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Tokens totales</span>
+              <span class="metric-value" id="metric-total-tokens">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Costo estimado total</span>
+              <span class="metric-value" id="metric-total-cost">—</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Promedio de tokens / conversación</span>
+              <span class="metric-value" id="metric-avg-tokens">—</span>
             </div>
           </div>
-          <div id="thread-view" class="thread-view">
-            <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
+
+          <div class="admin-search-row">
+            <input type="text" id="conversations-search-input" class="admin-search-input" placeholder="Buscar por cliente o contenido del mensaje..." autocomplete="off" />
           </div>
-          <form id="reply-form" class="reply-form" hidden>
-            <input id="reply-input" type="text" placeholder="Escribe como agente..." autocomplete="off" />
-            <button id="reply-send-btn" type="submit">Enviar</button>
-          </form>
+
+          <div class="admin-filters" id="status-filters">
+            <button class="filter-btn active" data-status="">Todas</button>
+            <button class="filter-btn" data-status="active">Activas</button>
+            <button class="filter-btn filter-btn-queue" data-status="escalated">
+              En cola
+              <span class="nav-badge" id="queue-filter-badge" hidden>0</span>
+            </button>
+            <button class="filter-btn" data-status="assigned">Asignadas</button>
+            <button class="filter-btn" data-status="closed">Cerradas</button>
+          </div>
+
+          <div class="admin-layout">
+            <section class="admin-panel">
+              <div class="admin-panel-header">
+                <h2>Sesiones</h2>
+                <span id="sessions-count" class="admin-count"></span>
+              </div>
+              <div id="sessions-list" class="sessions-list">
+                <p class="admin-empty">Cargando sesiones...</p>
+              </div>
+            </section>
+
+            <section class="admin-panel">
+              <div class="admin-panel-header">
+                <h2>Hilo de la conversación</h2>
+                <div class="handoff-actions" id="handoff-actions" hidden>
+                  <button id="take-btn" type="button" class="btn-handoff">Tomar conversación</button>
+                  <button id="return-btn" type="button" class="btn-handoff btn-secondary" hidden>Devolver al bot</button>
+                  <button id="close-btn" type="button" class="btn-handoff btn-secondary" hidden>Cerrar</button>
+                </div>
+              </div>
+              <div id="thread-assigned-banner" class="thread-assigned-banner" hidden></div>
+              <div id="thread-view" class="thread-view">
+                <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
+              </div>
+              <form id="reply-form" class="reply-form" hidden>
+                <input id="reply-input" type="text" placeholder="Escribe como agente..." autocomplete="off" />
+                <button id="reply-send-btn" type="submit">Enviar</button>
+              </form>
+            </section>
+          </div>
         </section>
-      </div>
-    </section>
 
-    <section class="admin-view" id="view-orders" hidden>
-      <div class="admin-filters" id="orders-filters">
-        <button class="filter-btn active" data-order-status="">Todos</button>
-        <button class="filter-btn" data-order-status="pending">Pendiente</button>
-        <button class="filter-btn" data-order-status="confirmed">Confirmado</button>
-        <button class="filter-btn" data-order-status="in_transit">En camino</button>
-        <button class="filter-btn" data-order-status="delivered">Entregado</button>
-        <button class="filter-btn" data-order-status="cancelled">Cancelado</button>
-      </div>
-      <div id="orders-board" class="orders-board">
-        <p class="admin-empty">Cargando pedidos...</p>
-      </div>
-    </section>
-
-    <section class="admin-view" id="view-inventory" hidden>
-      <div class="inventory-summary" id="inventory-summary">Cargando inventario...</div>
-      <div class="growth-table-wrapper">
-        <table class="growth-table inventory-table" id="inventory-table">
-          <thead>
-            <tr>
-              <th data-sort="name">Producto</th>
-              <th data-sort="category">Categoría</th>
-              <th data-sort="price">Precio</th>
-              <th data-sort="stock">Stock</th>
-            </tr>
-          </thead>
-          <tbody id="inventory-body"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="admin-view" id="view-costs" hidden>
-      <div class="card">
-        <h2>Tu volumen de conversaciones</h2>
-        <span class="hint" id="costs-avg-note">Cargando el promedio real de tokens por conversación...</span>
-        <div class="inputs-grid">
-          <div class="field">
-            <label for="costs-conversations-per-day">Conversaciones por día</label>
-            <input type="number" id="costs-conversations-per-day" min="1" step="1" value="20" />
-            <span class="hint">Cuántas conversaciones de clientes esperas atender por día.</span>
+        <section class="admin-view" id="view-orders" hidden>
+          <div class="admin-filters" id="orders-filters">
+            <button class="filter-btn active" data-order-status="">Todos</button>
+            <button class="filter-btn" data-order-status="pending">
+              Pendiente
+              <span class="nav-badge" id="orders-badge-pending" hidden>0</span>
+            </button>
+            <button class="filter-btn" data-order-status="confirmed">
+              Confirmado
+              <span class="nav-badge" id="orders-badge-confirmed" hidden>0</span>
+            </button>
+            <button class="filter-btn" data-order-status="in_transit">
+              En camino
+              <span class="nav-badge" id="orders-badge-in_transit" hidden>0</span>
+            </button>
+            <button class="filter-btn" data-order-status="delivered">Entregado</button>
+            <button class="filter-btn" data-order-status="cancelled">Cancelado</button>
           </div>
-          <div class="field">
-            <label for="costs-tokens-per-conversation">Tokens promedio por conversación</label>
-            <div class="range-row">
-              <input type="range" id="costs-tokens-per-conversation" min="500" max="40000" step="1" value="14703" />
-              <span class="range-value" id="costs-tokens-per-conversation-value">14703</span>
+          <div id="orders-board" class="orders-board-groups">
+            <p class="admin-empty">Cargando pedidos...</p>
+          </div>
+        </section>
+
+        <section class="admin-view" id="view-inventory" hidden>
+          <div class="admin-search-row">
+            <input type="text" id="inventory-search-input" class="admin-search-input" placeholder="Buscar por nombre o categoría..." autocomplete="off" />
+          </div>
+          <div class="inventory-summary" id="inventory-summary">Cargando inventario...</div>
+          <div class="growth-table-wrapper">
+            <table class="growth-table inventory-table" id="inventory-table">
+              <thead>
+                <tr>
+                  <th data-sort="name">Producto</th>
+                  <th data-sort="category">Categoría</th>
+                  <th data-sort="cost_price">Precio compra</th>
+                  <th data-sort="price">Precio venta</th>
+                  <th data-sort="margin_pct">Margen</th>
+                  <th data-sort="stock">Stock</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="admin-view" id="view-costs" hidden>
+          <div class="card">
+            <h2>Tu volumen de conversaciones</h2>
+            <span class="hint" id="costs-avg-note">Cargando el promedio real de tokens por conversación...</span>
+            <div class="inputs-grid">
+              <div class="field">
+                <label for="costs-conversations-per-day">Conversaciones por día</label>
+                <input type="number" id="costs-conversations-per-day" min="1" step="1" value="20" />
+                <span class="hint">Cuántas conversaciones de clientes esperas atender por día.</span>
+              </div>
+              <div class="field">
+                <label for="costs-tokens-per-conversation">Tokens promedio por conversación</label>
+                <div class="range-row">
+                  <input type="range" id="costs-tokens-per-conversation" min="500" max="40000" step="1" value="14703" />
+                  <span class="range-value" id="costs-tokens-per-conversation-value">14703</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="card">
-        <h2>Costo estimado del asistente IA</h2>
-        <span class="hint">Anthropic factura en dólares (USD) — es el valor real que se paga. El equivalente en pesos (COP) es una referencia, convertida con una tasa de cambio fija.</span>
-        <div class="results-grid">
-          <div class="result-card">
-            <span class="label">Por día</span>
-            <span class="value" id="costs-day-usd">—</span>
-            <span class="value-sub" id="costs-day-cop">—</span>
+          <div class="card">
+            <h2>Costo estimado del asistente IA</h2>
+            <span class="hint">Anthropic factura en dólares (USD) — es el valor real que se paga. El equivalente en pesos (COP) es una referencia, convertida con una tasa de cambio fija.</span>
+            <div class="results-grid">
+              <div class="result-card">
+                <span class="label">Por día</span>
+                <span class="value" id="costs-day-usd">—</span>
+                <span class="value-sub" id="costs-day-cop">—</span>
+              </div>
+              <div class="result-card">
+                <span class="label">Por mes</span>
+                <span class="value" id="costs-month-usd">—</span>
+                <span class="value-sub" id="costs-month-cop">—</span>
+              </div>
+              <div class="result-card">
+                <span class="label">Por año</span>
+                <span class="value" id="costs-year-usd">—</span>
+                <span class="value-sub" id="costs-year-cop">—</span>
+              </div>
+            </div>
           </div>
-          <div class="result-card">
-            <span class="label">Por mes</span>
-            <span class="value" id="costs-month-usd">—</span>
-            <span class="value-sub" id="costs-month-cop">—</span>
-          </div>
-          <div class="result-card">
-            <span class="label">Por año</span>
-            <span class="value" id="costs-year-usd">—</span>
-            <span class="value-sub" id="costs-year-cop">—</span>
-          </div>
-        </div>
-      </div>
 
-      <div class="card">
-        <h2>Comparación ilustrativa: IA vs. persona atendiendo el mismo volumen</h2>
-        <span class="hint">Ambas cifras están en la misma moneda (COP) para que la comparación sea real, no una entre dólares y pesos.</span>
-        <div class="comparison-grid">
-          <div class="comparison-card ai">
-            <span class="label">Asistente IA · costo mensual</span>
-            <span class="value" id="costs-compare-ai">—</span>
-            <span class="sub" id="costs-compare-ai-usd-sub">—</span>
+          <div class="card">
+            <h2>Comparación ilustrativa: IA vs. persona atendiendo el mismo volumen</h2>
+            <span class="hint">Ambas cifras están en la misma moneda (COP) para que la comparación sea real, no una entre dólares y pesos.</span>
+            <div class="comparison-grid">
+              <div class="comparison-card ai">
+                <span class="label">Asistente IA · costo mensual</span>
+                <span class="value" id="costs-compare-ai">—</span>
+                <span class="sub" id="costs-compare-ai-usd-sub">—</span>
+              </div>
+              <div class="comparison-card human">
+                <span class="label">Persona · costo mensual estimado</span>
+                <span class="value" id="costs-compare-human">—</span>
+                <span class="sub" id="costs-compare-human-hours">—</span>
+              </div>
+            </div>
+            <p class="disclaimer">
+              <strong>Nota:</strong> la comparación con el costo de una persona es una
+              estimación orientativa, no una cifra exacta, calculada a partir de un
+              salario mínimo colombiano aproximado más prestaciones y un tiempo
+              promedio ilustrativo de atención por conversación. El equivalente en
+              COP del costo del asistente IA usa una tasa de cambio de referencia
+              fija, no la tasa de mercado en tiempo real.
+            </p>
           </div>
-          <div class="comparison-card human">
-            <span class="label">Persona · costo mensual estimado</span>
-            <span class="value" id="costs-compare-human">—</span>
-            <span class="sub" id="costs-compare-human-hours">—</span>
-          </div>
-        </div>
-        <p class="disclaimer">
-          <strong>Nota:</strong> la comparación con el costo de una persona es una
-          estimación orientativa, no una cifra exacta, calculada a partir de un
-          salario mínimo colombiano aproximado más prestaciones y un tiempo
-          promedio ilustrativo de atención por conversación. El equivalente en
-          COP del costo del asistente IA usa una tasa de cambio de referencia
-          fija, no la tasa de mercado en tiempo real.
-        </p>
-      </div>
 
-      <div class="card">
-        <h2>Proyección de crecimiento</h2>
-        <span class="hint">Cómo escala el costo mensual del asistente si tu volumen de conversaciones crece, manteniendo el mismo promedio de tokens por conversación.</span>
-        <div class="growth-table-wrapper">
-          <table class="growth-table">
-            <thead>
-              <tr>
-                <th>Escenario</th>
-                <th>Volumen</th>
-                <th>Costo mensual (USD)</th>
-                <th>Costo mensual (COP)</th>
-              </tr>
-            </thead>
-            <tbody id="costs-growth-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+          <div class="card">
+            <h2>Proyección de crecimiento</h2>
+            <span class="hint">Cómo escala el costo mensual del asistente si tu volumen de conversaciones crece, manteniendo el mismo promedio de tokens por conversación.</span>
+            <div class="growth-table-wrapper">
+              <table class="growth-table">
+                <thead>
+                  <tr>
+                    <th>Escenario</th>
+                    <th>Volumen</th>
+                    <th>Costo mensual (USD)</th>
+                    <th>Costo mensual (COP)</th>
+                  </tr>
+                </thead>
+                <tbody id="costs-growth-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
-  <script src="/static/admin.js"></script>
   <script src="/static/roi_calculator.js"></script>
+  <script src="/static/admin_chart.js"></script>
+  <script src="/static/admin.js"></script>
   <script src="/static/admin_costs.js"></script>
 </body>
 </html>

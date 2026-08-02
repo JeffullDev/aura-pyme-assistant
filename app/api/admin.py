@@ -144,6 +144,12 @@ def uncovered_demand() -> list[dict]:
     return repository.get_uncovered_demand(business_id)
 
 
+@router.get("/resumen-diario")
+def daily_summary() -> list[dict]:
+    business_id = repository.get_business()["id"]
+    return repository.get_daily_summary(business_id)
+
+
 @router.get("/inventory")
 def inventory() -> list[dict]:
     # Stock numerico real, sin enmascarar: este endpoint es para el dueno del

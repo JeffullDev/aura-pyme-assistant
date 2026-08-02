@@ -1,7 +1,7 @@
-// Pestaña "Proyección de costos" del panel de admin. Usa las funciones puras
-// de roi_calculator.js (cargado antes que este script) y fetchJson/switchAdminView,
-// ya definidos en admin.js (cargado antes de este archivo) -- ese archivo es el
-// dueño de la navegación por pestañas, comun a las 5 secciones del panel.
+// Seccion "Proyección de costos" del panel de admin. Usa las funciones puras
+// de roi_calculator.js (cargado antes que este script) y fetchJson, ya definido
+// en admin.js (cargado antes de este archivo) -- ese archivo es el dueño de la
+// navegación del sidebar, comun a las 5 secciones del panel.
 
 const COSTS_DEFAULT_TOKENS_PER_CONVERSATION_FALLBACK = 14703;
 const COSTS_GROWTH_SCENARIOS = [
