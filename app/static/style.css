@@ -471,6 +471,10 @@ body {
   font-weight: 600;
 }
 
+.admin-agent-name-display[hidden] {
+  display: none;
+}
+
 .admin-agent-name-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1259,8 +1263,60 @@ body {
 
 .resumen-chart-svg {
   width: 100%;
-  height: auto;
+  /* Altura fija (no auto): con preserveAspectRatio="xMidYMid meet" el SVG se
+     ajusta dentro de esta caja sin nunca superarla, sin importar el ancho de
+     la tarjeta (v1.3: tope de ~280px total para toda la grafica). */
+  height: 220px;
   display: block;
+}
+
+.resumen-chart-range-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.range-btn {
+  background: var(--surface);
+  border: 1px solid #d1d5db;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.range-btn:hover {
+  border-color: var(--brand);
+}
+
+.range-btn.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: white;
+}
+
+.resumen-ratio-stat {
+  font-size: 15px;
+  color: var(--text);
+  background: var(--agent-bg);
+  border: 1px solid var(--agent-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.resumen-ratio-value {
+  font-weight: 700;
+  color: var(--agent-text);
+  font-size: 18px;
+}
+
+.resumen-exclusion-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
 }
 
 .resumen-chart-grid {
@@ -1343,35 +1399,6 @@ body {
 
 .breakdown-value {
   font-weight: 700;
-}
-
-.conversations-recent {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.recent-conversation-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid #f1f2f4;
-}
-
-.recent-conversation-user {
-  font-weight: 600;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-conversation-date {
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
 .btn-ver-todas {

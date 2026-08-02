@@ -5,12 +5,8 @@
 // (cargado despues) desde loadResumenChart().
 
 const RESUMEN_CHART_WIDTH = 700;
-const RESUMEN_CHART_HEIGHT = 260;
+const RESUMEN_CHART_HEIGHT = 200;
 const RESUMEN_CHART_PADDING = { top: 16, right: 16, bottom: 34, left: 16 };
-// Bajo esta altura, el margen y el costo de tokens en COP quedarian aplastados
-// contra el eje si compartieran una sola escala: el margen se mueve en cientos
-// de miles de COP y el costo de tokens en unos pocos miles. Cada serie se
-// escala a su propio maximo para que ambas formas sean comparables.
 const RESUMEN_CHART_MAX_LABELS = 7;
 
 function resumenChartFormatDateLabel(dateStr) {
@@ -38,8 +34,11 @@ function buildResumenChart(dailyData) {
   const margins = dailyData.map((d) => d.margin);
   const tokenCostsCop = dailyData.map((d) => d.token_cost * ROI_USD_TO_COP);
 
-  const maxMargin = Math.max(1, ...margins.map((v) => Math.abs(v)));
-  const maxTokenCop = Math.max(1, ...tokenCostsCop);
+  // ESCALA HONESTA (v1.3): un solo eje en COP para ambas series. El costo de
+  // tokens va a quedar pegado al eje -- eso es exactamente el mensaje que
+  // queremos transmitir (cuesta muy poco frente al margen), no un defecto de
+  // la grafica.
+  const sharedMax = Math.max(1, ...margins.map((v) => Math.abs(v)), ...tokenCostsCop);
 
   const stepX = dailyData.length > 1 ? plotWidth / (dailyData.length - 1) : 0;
 
@@ -50,8 +49,8 @@ function buildResumenChart(dailyData) {
       return { x, y };
     });
 
-  const marginPoints = toPoints(margins, maxMargin);
-  const tokenPoints = toPoints(tokenCostsCop, maxTokenCop);
+  const marginPoints = toPoints(margins, sharedMax);
+  const tokenPoints = toPoints(tokenCostsCop, sharedMax);
 
   const toPolyline = (points) => points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
@@ -95,7 +94,7 @@ function buildResumenChart(dailyData) {
 
   const legend = `<div class="resumen-chart-legend">
     <span class="resumen-chart-legend-item"><span class="resumen-chart-legend-swatch resumen-chart-legend-swatch-margin"></span>Margen de ganancia (COP)</span>
-    <span class="resumen-chart-legend-item"><span class="resumen-chart-legend-swatch resumen-chart-legend-swatch-token"></span>Costo de tokens (COP, escala propia)</span>
+    <span class="resumen-chart-legend-item"><span class="resumen-chart-legend-swatch resumen-chart-legend-swatch-token"></span>Costo de tokens (COP)</span>
   </div>`;
 
   return `${legend}<div class="resumen-chart-svg-wrapper">${svg}</div>`;

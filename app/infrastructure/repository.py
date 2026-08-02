@@ -204,7 +204,10 @@ def _auto_close_stale_sessions(business_id: str) -> None:
     """Auto-cierre por inactividad, sin scheduler: se corre de forma perezosa
     cada vez que se listan las sesiones desde el panel de admin (list_sessions).
     Una sesion 'active' sin mensajes nuevos en mas de 12 horas se considera
-    abandonada por el cliente y se cierra."""
+    abandonada por el cliente -> status='abandoned'. Distinto del cierre
+    explicito (boton 'Cerrar' del panel o la tool close_conversation del
+    agente, ver close_session): ese sigue marcando 'closed'. Antes ambos casos
+    quedaban indistinguibles bajo el mismo status 'closed' (v1.3)."""
     active_sessions = (
         get_supabase_client()
         .table("chat_session")
@@ -240,7 +243,7 @@ def _auto_close_stale_sessions(business_id: str) -> None:
     ]
     if stale_ids:
         get_supabase_client().table("chat_session").update(
-            {"status": "closed", "ended_at": datetime.now(timezone.utc).isoformat()}
+            {"status": "abandoned", "ended_at": datetime.now(timezone.utc).isoformat()}
         ).in_("id", stale_ids).execute()
 
 
@@ -416,8 +419,14 @@ def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, An
     """Demanda no cubierta: terminos que los clientes buscaron con search_catalog
     y no encontraron nada. Se recorre message_log (la tool ya quedo registrada
     con su tool_output original, que trae `count`) -- sin llamadas extra al
-    modelo ni tocar el catalogo. Top N por frecuencia, con la fecha del ultimo
-    intento."""
+    modelo. Top N por frecuencia, con la fecha del ultimo intento.
+
+    REVALIDACION (v1.3): tool_output.count quedo grabado en el momento de esa
+    busqueda historica. Si search_catalog tenia un bug (ej. no matcheaba
+    plurales) que ya se corrigio, un termino que hoy SI devuelve resultados
+    seguiria apareciendo como demanda no cubierta para siempre. Antes de
+    devolver cada termino se vuelve a correr contra el catalogo actual; si hoy
+    si hay resultados, se descarta."""
     sessions = (
         get_supabase_client()
         .table("chat_session")
@@ -456,10 +465,13 @@ def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, An
         if term not in last_asked or created_at > last_asked[term]:
             last_asked[term] = created_at
 
-    ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:limit]
+    ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)
+    still_uncovered = [
+        (term, count) for term, count in ranked if not search_catalog(business_id, term, limit=1)
+    ]
     return [
         {"term": term, "count": count, "last_asked_at": last_asked[term].isoformat()}
-        for term, count in ranked
+        for term, count in still_uncovered[:limit]
     ]
 
 
@@ -467,7 +479,7 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
     sessions = (
         get_supabase_client()
         .table("chat_session")
-        .select("id")
+        .select("id, status")
         .eq("business_id", business_id)
         .execute()
         .data
@@ -489,6 +501,13 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
 
     escalated_conversations = _count_escalated_sessions(session_ids)
     conversations_by_category = _classify_conversations(session_ids)
+    # 'abandoned'/'closed' son dimension de ESTADO actual de la sesion (no se
+    # excluyen entre si con venta/garantia/escalada/consulta, que son la
+    # categoria de TEMA de la conversacion): se agregan al mismo desglose
+    # porque el panel (v1.3) las muestra juntas en la tarjeta de Conversaciones.
+    for session in sessions:
+        if session["status"] in ("abandoned", "closed"):
+            conversations_by_category[session["status"]] = conversations_by_category.get(session["status"], 0) + 1
 
     orders = (
         get_supabase_client()
@@ -773,25 +792,29 @@ def list_catalog(business_id: str) -> list[dict[str, Any]]:
     )
 
 
-def get_daily_summary(business_id: str, days: int = 14) -> list[dict[str, Any]]:
-    """Serie diaria de margen de ganancia (subtotal de pedidos menos el costo de
-    la mercancia via order_items.unit_cost) vs costo de tokens, para la grafica
-    de la seccion Resumen (v1.2 parte G). Se agrupa por la fecha (prefijo YYYY-MM-DD
-    de created_at, en UTC): es solo para visualizar una tendencia de rentabilidad,
-    no para horarios de entrega exactos, asi que no vale la pena convertir a
-    BUSINESS_TZ. Trae todo el negocio y filtra el rango en Python (mismo volumen
-    bajo de un MVP que list_orders/get_business_stats) para evitar comparar una
-    columna timestamp sin zona horaria (orders.created_at) contra un valor con
-    zona horaria en el filtro de PostgREST."""
-    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
-    cutoff_key = cutoff_date.isoformat()
+def get_daily_summary(business_id: str) -> dict[str, Any]:
+    """Serie diaria COMPLETA (desde el primer evento registrado hasta hoy) de
+    margen de ganancia (subtotal de pedidos menos el costo de la mercancia via
+    order_items.unit_cost) vs costo de tokens, para la grafica de la seccion
+    Resumen (v1.2 parte G / v1.3: rango honesto). El selector de rango (Hoy/7
+    dias/30 dias/Todo) se aplica en el cliente sobre esta serie completa, asi
+    que aqui no se recibe ni se aplica ningun filtro de dias.
 
+    Un pedido cuenta para el margen solo si TODOS sus order_items tienen
+    unit_cost registrado. Si algun item no lo tiene (visto en datos reales: el
+    costo no siempre queda snapshot-eado al crear el pedido, sea porque el
+    producto no tenia cost_price en catalog_item en ese momento o por pedidos
+    de antes de la migracion 007_margenes.sql), el pedido se EXCLUYE por
+    completo del margen en vez de asumir costo 0 -- lo contrario inflaria el
+    margen mostrado. excluded_orders_count informa cuantos pedidos se
+    excluyeron por este motivo para que el frontend pueda avisarlo."""
     sessions = (
         get_supabase_client().table("chat_session").select("id").eq("business_id", business_id).execute().data
     )
     session_ids = [session["id"] for session in sessions]
 
     token_cost_by_date: dict[str, float] = {}
+    token_dates: list[str] = []
     if session_ids:
         usage_rows = (
             get_supabase_client()
@@ -803,9 +826,8 @@ def get_daily_summary(business_id: str, days: int = 14) -> list[dict[str, Any]]:
         )
         for row in usage_rows:
             date_key = row["created_at"][:10]
-            if date_key < cutoff_key:
-                continue
             token_cost_by_date[date_key] = token_cost_by_date.get(date_key, 0.0) + row["estimated_cost"]
+            token_dates.append(date_key)
 
     orders = (
         get_supabase_client()
@@ -815,15 +837,18 @@ def get_daily_summary(business_id: str, days: int = 14) -> list[dict[str, Any]]:
         .execute()
         .data
     )
-    relevant_orders = [
-        order
-        for order in orders
-        if order["status"] != "cancelled" and str(order["created_at"])[:10] >= cutoff_key
-    ]
+    order_dates = [str(order["created_at"])[:10] for order in orders]
 
-    margin_by_date: dict[str, float] = {}
-    if relevant_orders:
-        order_ids = [order["id"] for order in relevant_orders]
+    today = datetime.now(timezone.utc).date()
+    all_dates = token_dates + order_dates
+    start_date = min((datetime.fromisoformat(d).date() for d in all_dates), default=today)
+
+    non_cancelled_orders = [order for order in orders if order["status"] != "cancelled"]
+
+    excluded_order_ids: set[str] = set()
+    cost_by_order: dict[str, float] = {}
+    if non_cancelled_orders:
+        order_ids = [order["id"] for order in non_cancelled_orders]
         items = (
             get_supabase_client()
             .table("order_items")
@@ -832,22 +857,35 @@ def get_daily_summary(business_id: str, days: int = 14) -> list[dict[str, Any]]:
             .execute()
             .data
         )
-        cost_by_order: dict[str, float] = {}
+        items_by_order: dict[str, list[dict[str, Any]]] = {}
         for item in items:
-            unit_cost = item.get("unit_cost") or 0
-            cost_by_order[item["order_id"]] = cost_by_order.get(item["order_id"], 0.0) + unit_cost * item["quantity"]
+            items_by_order.setdefault(item["order_id"], []).append(item)
 
-        for order in relevant_orders:
-            date_key = str(order["created_at"])[:10]
-            margin = float(order["subtotal"]) - cost_by_order.get(order["id"], 0.0)
-            margin_by_date[date_key] = margin_by_date.get(date_key, 0.0) + margin
+        for order_id, order_items in items_by_order.items():
+            if any(item.get("unit_cost") is None for item in order_items):
+                excluded_order_ids.add(order_id)
+                continue
+            cost_by_order[order_id] = sum(item["unit_cost"] * item["quantity"] for item in order_items)
 
-    dates = [(cutoff_date + timedelta(days=offset)).isoformat() for offset in range(days)]
-    return [
-        {
-            "date": date_key,
-            "margin": round(margin_by_date.get(date_key, 0.0), 2),
-            "token_cost": round(token_cost_by_date.get(date_key, 0.0), 6),
-        }
-        for date_key in dates
-    ]
+    margin_by_date: dict[str, float] = {}
+    for order in non_cancelled_orders:
+        if order["id"] in excluded_order_ids:
+            continue
+        date_key = str(order["created_at"])[:10]
+        margin = float(order["subtotal"]) - cost_by_order.get(order["id"], 0.0)
+        margin_by_date[date_key] = margin_by_date.get(date_key, 0.0) + margin
+
+    num_days = (today - start_date).days + 1
+    dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(num_days)]
+
+    return {
+        "daily": [
+            {
+                "date": date_key,
+                "margin": round(margin_by_date.get(date_key, 0.0), 2),
+                "token_cost": round(token_cost_by_date.get(date_key, 0.0), 6),
+            }
+            for date_key in dates
+        ],
+        "excluded_orders_count": len(excluded_order_ids),
+    }

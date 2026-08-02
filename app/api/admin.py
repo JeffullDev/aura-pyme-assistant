@@ -5,7 +5,7 @@ from app.infrastructure import repository
 
 router = APIRouter(prefix="/admin")
 
-VALID_STATUSES = {"active", "escalated", "assigned", "closed"}
+VALID_STATUSES = {"active", "escalated", "assigned", "closed", "abandoned"}
 
 # pending -> confirmed -> in_transit -> delivered es la unica progresion lineal;
 # cancelled es alcanzable desde cualquier estado no terminal. delivered y
@@ -145,7 +145,7 @@ def uncovered_demand() -> list[dict]:
 
 
 @router.get("/resumen-diario")
-def daily_summary() -> list[dict]:
+def daily_summary() -> dict:
     business_id = repository.get_business()["id"]
     return repository.get_daily_summary(business_id)
 

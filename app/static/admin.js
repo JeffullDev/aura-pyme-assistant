@@ -3,6 +3,7 @@ const STATUS_LABELS = {
   escalated: "Escalada",
   assigned: "Asignada",
   closed: "Cerrada",
+  abandoned: "Abandonada",
 };
 
 const ROLE_LABELS = {
@@ -33,8 +34,10 @@ const ORDER_STATUS_TRANSITIONS = {
 const CONVERSATION_CATEGORY_LABELS = {
   venta: "Terminaron en venta",
   garantia: "Consultas de garantía",
-  escalada: "Escaladas a un humano",
+  escalada: "Escalas",
   consulta: "Consultas simples",
+  abandoned: "Abandonadas",
+  closed: "Cerradas",
 };
 
 const VIEW_TITLES = {
@@ -83,8 +86,10 @@ const kpiAvgTicketEl = document.getElementById("kpi-avg-ticket");
 const kpiTokenCostEl = document.getElementById("kpi-token-cost");
 const kpiCostVsRevenueEl = document.getElementById("kpi-cost-vs-revenue");
 const resumenChartEl = document.getElementById("resumen-chart");
+const resumenRangeSelectorEl = document.getElementById("resumen-range-selector");
+const resumenRatioStatEl = document.getElementById("resumen-ratio-stat");
+const resumenExclusionNoteEl = document.getElementById("resumen-exclusion-note");
 const conversationsBreakdownEl = document.getElementById("conversations-breakdown");
-const conversationsRecentEl = document.getElementById("conversations-recent");
 const verTodasConversacionesBtnEl = document.getElementById("ver-todas-conversaciones-btn");
 const demandaNoCubiertaEl = document.getElementById("demanda-no-cubierta");
 
@@ -106,6 +111,8 @@ let inventorySort = { key: "name", desc: false };
 let allSessionsCache = [];
 const sessionMessagesCache = {};
 let conversationsSearchDebounceTimer = null;
+let resumenDailyFull = [];
+let resumenCurrentRange = "7d";
 
 function formatDate(isoString) {
   if (!isoString) return "—";
@@ -310,7 +317,7 @@ async function loadStats() {
 
 function renderConversationsBreakdown(stats) {
   const byCategory = stats.conversations_by_category || {};
-  const rows = ["venta", "garantia", "escalada", "consulta"]
+  const rows = ["venta", "garantia", "escalada", "consulta", "abandoned", "closed"]
     .map((cat) => {
       const count = byCategory[cat] || 0;
       return `<div class="breakdown-row"><span class="breakdown-label">${CONVERSATION_CATEGORY_LABELS[cat]}</span><span class="breakdown-value">${count}</span></div>`;
@@ -321,31 +328,6 @@ function renderConversationsBreakdown(stats) {
     <div class="breakdown-total"><span class="breakdown-total-value">${formatTokens(stats.total_conversations)}</span> conversaciones totales</div>
     <div class="breakdown-rows">${rows}</div>
   `;
-}
-
-async function loadRecentConversations() {
-  conversationsRecentEl.innerHTML = '<p class="admin-empty">Cargando...</p>';
-  try {
-    const sessions = await fetchJson("/admin/sessions");
-    const recent = sessions.slice(0, 3);
-    if (recent.length === 0) {
-      conversationsRecentEl.innerHTML = '<p class="admin-empty">Todavía no hay conversaciones.</p>';
-      return;
-    }
-    conversationsRecentEl.innerHTML = recent
-      .map(
-        (session) => `
-          <div class="recent-conversation-row">
-            <span class="recent-conversation-user">${escapeHtml(session.user_identifier)}</span>
-            <span class="status-badge status-${session.status}">${STATUS_LABELS[session.status] || session.status}</span>
-            <span class="recent-conversation-date">${formatDate(session.started_at)}</span>
-          </div>
-        `
-      )
-      .join("");
-  } catch (err) {
-    conversationsRecentEl.innerHTML = '<p class="admin-empty admin-error">No se pudieron cargar las conversaciones recientes.</p>';
-  }
 }
 
 async function loadUncoveredDemand() {
@@ -372,13 +354,59 @@ async function loadUncoveredDemand() {
   }
 }
 
+// Rango del selector tipo grafica de acciones: se aplica en el cliente sobre
+// la serie completa que devuelve /admin/resumen-diario, sin volver a pedirla
+// (ver get_daily_summary en repository.py, que ya trae todo el historial).
+function filterDailyByRange(daily, range) {
+  if (range === "today") return daily.slice(-1);
+  if (range === "7d") return daily.slice(-7);
+  if (range === "30d") return daily.slice(-30);
+  return daily;
+}
+
+function renderResumenRatioStat(filtered) {
+  const marginTotal = filtered.reduce((sum, d) => sum + d.margin, 0);
+  const tokenCostTotalCop = filtered.reduce((sum, d) => sum + d.token_cost * ROI_USD_TO_COP, 0);
+  if (tokenCostTotalCop <= 0) {
+    resumenRatioStatEl.innerHTML = `Sin costo de tokens registrado en este rango todavía.`;
+    return;
+  }
+  const ratio = marginTotal / tokenCostTotalCop;
+  resumenRatioStatEl.innerHTML = `Por cada $1 invertido en tokens, el asistente generó <span class="resumen-ratio-value">$${ratio.toLocaleString("es-CO", { maximumFractionDigits: 0 })}</span> de margen`;
+}
+
+function renderResumenChartForRange() {
+  const filtered = filterDailyByRange(resumenDailyFull, resumenCurrentRange);
+  resumenChartEl.innerHTML = buildResumenChart(filtered);
+  renderResumenRatioStat(filtered);
+}
+
+resumenRangeSelectorEl.addEventListener("click", (event) => {
+  const button = event.target.closest(".range-btn");
+  if (!button) return;
+  resumenRangeSelectorEl.querySelectorAll(".range-btn").forEach((btn) => btn.classList.remove("active"));
+  button.classList.add("active");
+  resumenCurrentRange = button.dataset.range;
+  renderResumenChartForRange();
+});
+
 async function loadResumenChart() {
   resumenChartEl.innerHTML = '<p class="admin-empty">Cargando gráfica...</p>';
+  resumenRatioStatEl.textContent = "Calculando...";
   try {
-    const daily = await fetchJson("/admin/resumen-diario");
-    resumenChartEl.innerHTML = buildResumenChart(daily);
+    const data = await fetchJson("/admin/resumen-diario");
+    resumenDailyFull = data.daily || [];
+    const excludedCount = data.excluded_orders_count || 0;
+    if (excludedCount > 0) {
+      resumenExclusionNoteEl.textContent = `Nota: ${excludedCount} pedido${excludedCount === 1 ? "" : "s"} no se incluyen en el margen porque no tienen registrado el costo de la mercancía.`;
+      resumenExclusionNoteEl.hidden = false;
+    } else {
+      resumenExclusionNoteEl.hidden = true;
+    }
+    renderResumenChartForRange();
   } catch (err) {
     resumenChartEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar la gráfica.</p>';
+    resumenRatioStatEl.textContent = "—";
   }
 }
 
@@ -387,7 +415,7 @@ async function loadSummary() {
     const stats = await fetchJson("/admin/stats");
     kpiRevenueEl.textContent = formatCOP(stats.revenue_total);
     kpiOrdersTotalEl.textContent = formatTokens(stats.total_orders);
-    kpiConversionEl.textContent = `Tasa de conversión: ${formatPercent(stats.conversion_rate)}`;
+    kpiConversionEl.textContent = `${formatTokens(stats.total_orders)} de ${formatTokens(stats.total_conversations)} conversaciones terminaron en compra (${formatPercent(stats.conversion_rate)})`;
     kpiAvgTicketEl.textContent = formatCOP(stats.avg_ticket);
     kpiTokenCostEl.textContent = formatCopWithUsd(stats.total_estimated_cost);
     kpiCostVsRevenueEl.textContent = `Generó ${formatCOP(stats.revenue_total)} en pedidos — costó ${formatCopWithUsd(stats.total_estimated_cost)} en tokens`;
@@ -399,7 +427,6 @@ async function loadSummary() {
   }
 
   loadResumenChart();
-  loadRecentConversations();
   loadUncoveredDemand();
 }
 
@@ -807,12 +834,14 @@ function updateHandoffControls() {
   }
 
   const isAssigned = session.status === "assigned";
-  const isClosed = session.status === "closed";
+  // 'abandoned' (v1.3) es tan terminal como 'closed': la sesion se cerro sola
+  // por inactividad, no tiene sentido "tomarla" ni "cerrarla" de nuevo.
+  const isTerminal = session.status === "closed" || session.status === "abandoned";
 
   handoffActionsEl.hidden = false;
-  takeBtnEl.hidden = isAssigned || isClosed;
+  takeBtnEl.hidden = isAssigned || isTerminal;
   returnBtnEl.hidden = !isAssigned;
-  closeBtnEl.hidden = isClosed;
+  closeBtnEl.hidden = isTerminal;
   replyFormEl.hidden = !isAssigned;
   updateThreadAssignedBanner();
 }
