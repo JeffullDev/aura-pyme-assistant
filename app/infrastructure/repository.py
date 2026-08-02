@@ -253,11 +253,19 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
     total_tokens = sum(entry["total_tokens"] for entry in token_totals.values())
     total_estimated_cost = sum(entry["estimated_cost"] for entry in token_totals.values())
 
+    # El promedio se calcula solo sobre sesiones con al menos un registro en
+    # token_usage: conversaciones anteriores a la migracion nunca pudieron
+    # generar tokens y diluirian el promedio si se dividiera por total_conversations.
+    sessions_with_usage = len(token_totals)
+    avg_tokens_per_conversation = (
+        total_tokens / sessions_with_usage if sessions_with_usage else 0.0
+    )
+
     return {
         "total_conversations": total_conversations,
         "total_tokens": total_tokens,
         "total_estimated_cost": total_estimated_cost,
-        "avg_tokens_per_conversation": total_tokens / total_conversations,
+        "avg_tokens_per_conversation": avg_tokens_per_conversation,
     }
 
 
