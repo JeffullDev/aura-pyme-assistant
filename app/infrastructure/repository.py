@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
@@ -184,14 +184,64 @@ def return_session_to_bot(session_id: str) -> dict[str, Any]:
 
 
 def close_session(session_id: str) -> dict[str, Any]:
+    """Usada tanto por el boton 'Cerrar' del panel de admin como por la tool
+    close_conversation del agente: mismo efecto en ambos casos, status +
+    ended_at."""
     result = (
         get_supabase_client()
         .table("chat_session")
-        .update({"status": "closed"})
+        .update({"status": "closed", "ended_at": datetime.now(timezone.utc).isoformat()})
         .eq("id", session_id)
         .execute()
     )
     return result.data[0]
+
+
+INACTIVITY_CLOSE_HOURS = 12
+
+
+def _auto_close_stale_sessions(business_id: str) -> None:
+    """Auto-cierre por inactividad, sin scheduler: se corre de forma perezosa
+    cada vez que se listan las sesiones desde el panel de admin (list_sessions).
+    Una sesion 'active' sin mensajes nuevos en mas de 12 horas se considera
+    abandonada por el cliente y se cierra."""
+    active_sessions = (
+        get_supabase_client()
+        .table("chat_session")
+        .select("id")
+        .eq("business_id", business_id)
+        .eq("status", "active")
+        .execute()
+        .data
+    )
+    if not active_sessions:
+        return
+
+    session_ids = [session["id"] for session in active_sessions]
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("session_id, created_at")
+        .in_("session_id", session_ids)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+    # order(desc) + setdefault: la primera fila vista por sesion es la mas reciente.
+    last_message_at: dict[str, str] = {}
+    for row in rows:
+        last_message_at.setdefault(row["session_id"], row["created_at"])
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=INACTIVITY_CLOSE_HOURS)
+    stale_ids = [
+        session_id
+        for session_id, last_at in last_message_at.items()
+        if datetime.fromisoformat(last_at) < cutoff
+    ]
+    if stale_ids:
+        get_supabase_client().table("chat_session").update(
+            {"status": "closed", "ended_at": datetime.now(timezone.utc).isoformat()}
+        ).in_("id", stale_ids).execute()
 
 
 def log_message(
@@ -220,6 +270,7 @@ def log_message(
 
 
 def list_sessions(business_id: str, status: str | None = None) -> list[dict[str, Any]]:
+    _auto_close_stale_sessions(business_id)
     request = (
         get_supabase_client()
         .table("chat_session")
@@ -317,6 +368,101 @@ def _count_escalated_sessions(session_ids: list[str]) -> int:
     return len({row["session_id"] for row in rows})
 
 
+def _classify_conversations(session_ids: list[str]) -> dict[str, int]:
+    """Categoria derivada de las tools llamadas en cada sesion, via message_log
+    (SIN llamadas extra al modelo). Precedencia exacta: si llamo create_order ->
+    'venta'; si no y llamo escalate_to_human -> 'escalada'; si no y llamo
+    get_policy con topic='garantia' -> 'garantia'; si no -> 'consulta'."""
+    if not session_ids:
+        return {}
+
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("session_id, tool_name, tool_input")
+        .in_("session_id", session_ids)
+        .in_("tool_name", ["create_order", "escalate_to_human", "get_policy"])
+        .execute()
+        .data
+    )
+
+    created_order: set[str] = set()
+    escalated: set[str] = set()
+    warranty: set[str] = set()
+    for row in rows:
+        sid = row["session_id"]
+        if row["tool_name"] == "create_order":
+            created_order.add(sid)
+        elif row["tool_name"] == "escalate_to_human":
+            escalated.add(sid)
+        elif row["tool_name"] == "get_policy" and (row.get("tool_input") or {}).get("topic") == "garantia":
+            warranty.add(sid)
+
+    counts: dict[str, int] = {}
+    for session_id in session_ids:
+        if session_id in created_order:
+            category = "venta"
+        elif session_id in escalated:
+            category = "escalada"
+        elif session_id in warranty:
+            category = "garantia"
+        else:
+            category = "consulta"
+        counts[category] = counts.get(category, 0) + 1
+    return counts
+
+
+def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Demanda no cubierta: terminos que los clientes buscaron con search_catalog
+    y no encontraron nada. Se recorre message_log (la tool ya quedo registrada
+    con su tool_output original, que trae `count`) -- sin llamadas extra al
+    modelo ni tocar el catalogo. Top N por frecuencia, con la fecha del ultimo
+    intento."""
+    sessions = (
+        get_supabase_client()
+        .table("chat_session")
+        .select("id")
+        .eq("business_id", business_id)
+        .execute()
+        .data
+    )
+    session_ids = [session["id"] for session in sessions]
+    if not session_ids:
+        return []
+
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("tool_input, tool_output, created_at")
+        .in_("session_id", session_ids)
+        .eq("tool_name", "search_catalog")
+        .execute()
+        .data
+    )
+
+    counts: dict[str, int] = {}
+    last_asked: dict[str, datetime] = {}
+    for row in rows:
+        tool_output = row.get("tool_output") or {}
+        # Solo terminos que devolvieron CERO resultados (count ausente o
+        # distinto de 0 no cuenta como demanda no cubierta).
+        if tool_output.get("count") != 0:
+            continue
+        term = str((row.get("tool_input") or {}).get("query", "")).strip().lower()
+        if not term:
+            continue
+        counts[term] = counts.get(term, 0) + 1
+        created_at = datetime.fromisoformat(row["created_at"])
+        if term not in last_asked or created_at > last_asked[term]:
+            last_asked[term] = created_at
+
+    ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:limit]
+    return [
+        {"term": term, "count": count, "last_asked_at": last_asked[term].isoformat()}
+        for term, count in ranked
+    ]
+
+
 def get_business_stats(business_id: str) -> dict[str, Any]:
     sessions = (
         get_supabase_client()
@@ -342,6 +488,7 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
     )
 
     escalated_conversations = _count_escalated_sessions(session_ids)
+    conversations_by_category = _classify_conversations(session_ids)
 
     orders = (
         get_supabase_client()
@@ -369,6 +516,7 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
     return {
         "total_conversations": total_conversations,
         "escalated_conversations": escalated_conversations,
+        "conversations_by_category": conversations_by_category,
         "total_tokens": total_tokens,
         "total_estimated_cost": total_estimated_cost,
         "avg_tokens_per_conversation": avg_tokens_per_conversation,
@@ -447,7 +595,7 @@ def find_catalog_item_for_order(business_id: str, product_name: str) -> dict[str
     result = (
         get_supabase_client()
         .table("catalog_item")
-        .select("id, name, price, stock, category")
+        .select("id, name, price, stock, category, cost_price")
         .eq("business_id", business_id)
         .or_(conditions)
         .limit(1)

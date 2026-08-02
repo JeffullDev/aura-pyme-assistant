@@ -62,6 +62,10 @@ def create_order(
                 "product_name": catalog_item["name"],
                 "quantity": quantity,
                 "unit_price": unit_price,
+                # Snapshot del costo al momento de la compra, mismo patron que
+                # unit_price (ver comentario en 005_orders.sql): si el costo de
+                # compra cambia despues, el historico de margenes no se altera.
+                "unit_cost": catalog_item.get("cost_price"),
                 "subtotal": unit_price * quantity,
                 "new_stock": catalog_item["stock"] - quantity,
             }
@@ -96,6 +100,7 @@ def create_order(
                 "product_name": item["product_name"],
                 "quantity": item["quantity"],
                 "unit_price": item["unit_price"],
+                "unit_cost": item["unit_cost"],
                 "subtotal": item["subtotal"],
             }
             for item in resolved_items

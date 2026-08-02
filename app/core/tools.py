@@ -149,6 +149,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["reason"],
         },
     },
+    {
+        "name": "close_conversation",
+        "description": (
+            "Cierra la conversación cuando el cliente indica que ya no necesita "
+            "nada más (dice 'no gracias', 'eso es todo', 'listo', se despide, etc.). "
+            "Antes de cerrar SIEMPRE debes haberte despedido cordialmente y "
+            "preguntado si necesita algo más; solo cierra cuando el cliente "
+            "confirme que no."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Motivo o resumen breve de por qué se cierra la conversación.",
+                }
+            },
+            "required": ["reason"],
+        },
+    },
 ]
 
 
@@ -229,5 +249,9 @@ def execute_tool(
     if name == "escalate_to_human":
         repository.escalate_session(session_id)
         return {"escalated": True, "reason": tool_input.get("reason", "")}
+
+    if name == "close_conversation":
+        repository.close_session(session_id)
+        return {"closed": True, "reason": tool_input.get("reason", "")}
 
     return {"error": f"Herramienta desconocida: {name}"}

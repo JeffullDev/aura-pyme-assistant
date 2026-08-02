@@ -261,6 +261,26 @@ CATALOG_ITEMS = [
     },
 ]
 
+# Margen tipico de ferreteria sobre el costo (cost-plus), variando por
+# categoria: herramienta electrica suele tener menos margen (~25%) que
+# tornilleria/materiales (~40%). Mismos porcentajes que la migracion 007
+# (que hace el backfill de cost_price para negocios ya sembrados), para que un
+# negocio nuevo sembrado desde cero quede identico.
+MARGIN_BY_CATEGORY = {
+    "herramientas electricas": 0.25,
+    "herramientas manuales": 0.30,
+    "materiales de construccion": 0.28,
+    "pinturas": 0.32,
+    "materiales": 0.40,
+    "seguridad industrial": 0.35,
+    "electricidad": 0.30,
+    "adhesivos": 0.35,
+    "plomeria": 0.30,
+    "cerrajeria": 0.30,
+    "jardineria": 0.32,
+}
+DEFAULT_MARGIN = 0.30
+
 POLICIES = [
     {
         "topic": "horario",
@@ -317,7 +337,16 @@ def main() -> None:
     business_id = business_result.data[0]["id"]
     print(f"Business creado: {business_id}")
 
-    items = [{**item, "business_id": business_id} for item in CATALOG_ITEMS]
+    items = [
+        {
+            **item,
+            "business_id": business_id,
+            "cost_price": round(
+                item["price"] / (1 + MARGIN_BY_CATEGORY.get(item["category"], DEFAULT_MARGIN)), 2
+            ),
+        }
+        for item in CATALOG_ITEMS
+    ]
     client.table("catalog_item").insert(items).execute()
     print(f"{len(items)} catalog_item insertados")
 

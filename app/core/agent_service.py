@@ -44,7 +44,8 @@ Reglas:
 - Informa la hora estimada de entrega de forma natural y conversacional (por ejemplo "te llega hoy alrededor de las 6:30 pm" o "mañana a partir de las 9:00 am"), nunca en formato técnico o ISO.
 - Si create_order devuelve un error (por ejemplo falta de stock), explícaselo al cliente con honestidad y ofrece una alternativa razonable si aplica; nunca insistas en crear el pedido igual.
 - Usa check_order_status cuando el cliente pregunte por el estado o la hora de entrega de su pedido.
-- Usa escalate_to_human si el cliente pide hablar con una persona, si detectas frustración clara, o si no puedes resolver la consulta con las otras herramientas. Al escalar, avísale al cliente que alguien del equipo lo contactará."""
+- Usa escalate_to_human si el cliente pide hablar con una persona, si detectas frustración clara, o si no puedes resolver la consulta con las otras herramientas. Al escalar, avísale al cliente que alguien del equipo lo contactará.
+- Cuando resuelvas la duda del cliente o se concrete una venta, despídete de forma cordial y pregúntale si necesita algo más. Si el cliente confirma que no necesita nada adicional (por ejemplo dice "no gracias", "eso es todo", "listo", o simplemente se despide), llama a close_conversation con un resumen breve del motivo. NUNCA llames close_conversation sin haberte despedido antes y haber preguntado explícitamente si necesita algo más."""
 
 
 def _build_system_prompt(tone_prompt: str) -> str:

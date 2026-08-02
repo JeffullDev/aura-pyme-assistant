@@ -138,6 +138,12 @@ def update_order_status(order_id: str, request: OrderStatusRequest) -> dict:
     return repository.update_order_status(order_id, request.status)
 
 
+@router.get("/demanda-no-cubierta")
+def uncovered_demand() -> list[dict]:
+    business_id = repository.get_business()["id"]
+    return repository.get_uncovered_demand(business_id)
+
+
 @router.get("/inventory")
 def inventory() -> list[dict]:
     # Stock numerico real, sin enmascarar: este endpoint es para el dueno del
