@@ -152,6 +152,51 @@ def log_message(
     )
 
 
+def list_sessions(business_id: str, status: str | None = None) -> list[dict[str, Any]]:
+    request = (
+        get_supabase_client()
+        .table("chat_session")
+        .select("id, user_identifier, status, started_at, ended_at")
+        .eq("business_id", business_id)
+        .order("started_at", desc=True)
+    )
+    if status:
+        request = request.eq("status", status)
+    sessions = request.execute().data
+    if not sessions:
+        return []
+
+    # Una sola query extra para contar mensajes por sesion en vez de N+1.
+    session_ids = [session["id"] for session in sessions]
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("session_id")
+        .in_("session_id", session_ids)
+        .execute()
+        .data
+    )
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["session_id"]] = counts.get(row["session_id"], 0) + 1
+
+    for session in sessions:
+        session["message_count"] = counts.get(session["id"], 0)
+    return sessions
+
+
+def get_messages(session_id: str) -> list[dict[str, Any]]:
+    result = (
+        get_supabase_client()
+        .table("message_log")
+        .select("role, content, tool_name, tool_input, tool_output, created_at")
+        .eq("session_id", session_id)
+        .order("created_at")
+        .execute()
+    )
+    return result.data
+
+
 def get_history(session_id: str) -> list[dict[str, str]]:
     """Turnos user/assistant en texto plano. Las filas role='tool' quedan en la
     tabla para trazabilidad, pero no se reenvian a Claude en el siguiente turno."""

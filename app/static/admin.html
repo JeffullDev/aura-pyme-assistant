@@ -1,0 +1,56 @@
+<!--
+  Panel de solo lectura para el dueno del negocio / jurado de la demo.
+  PENDIENTE (fuera de alcance del MVP de 48h): no tiene autenticacion/login.
+  Cualquiera con la URL puede ver todas las conversaciones. Antes de produccion
+  esto necesita un login real.
+-->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Tornillo Feliz · Panel de conversaciones</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <div class="admin-page">
+    <header class="admin-header">
+      <div>
+        <h1>Panel de conversaciones</h1>
+        <p class="admin-subtitle">El Tornillo Feliz · vista de solo lectura</p>
+      </div>
+      <a class="btn-new-conversation" href="/">Ir al chat</a>
+    </header>
+
+    <div class="admin-filters" id="status-filters">
+      <button class="filter-btn active" data-status="">Todas</button>
+      <button class="filter-btn" data-status="active">Activas</button>
+      <button class="filter-btn" data-status="escalated">Escaladas</button>
+      <button class="filter-btn" data-status="closed">Cerradas</button>
+    </div>
+
+    <div class="admin-layout">
+      <section class="admin-panel">
+        <div class="admin-panel-header">
+          <h2>Sesiones</h2>
+          <span id="sessions-count" class="admin-count"></span>
+        </div>
+        <div id="sessions-list" class="sessions-list">
+          <p class="admin-empty">Cargando sesiones...</p>
+        </div>
+      </section>
+
+      <section class="admin-panel">
+        <div class="admin-panel-header">
+          <h2>Hilo de la conversación</h2>
+        </div>
+        <div id="thread-view" class="thread-view">
+          <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>
