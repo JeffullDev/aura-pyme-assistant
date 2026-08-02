@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calculadora de costo — Asistente IA para tu pyme</title>
+<style>
+  :root {
+    --brand: #2563eb;
+    --brand-dark: #1d4ed8;
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --radius: 16px;
+    --accent-green: #16a34a;
+    --accent-green-bg: #f0fdf4;
+    --accent-orange: #9a3412;
+    --accent-orange-bg: #fff7ed;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 16px 60px;
+  }
+
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  header {
+    background: var(--brand);
+    color: white;
+    padding: 22px 26px;
+    border-radius: var(--radius);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  }
+
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+  }
+
+  header p {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.92;
+  }
+
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    padding: 20px 22px;
+  }
+
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 16px;
+  }
+
+  .inputs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .field .hint {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-top: 4px;
+  }
+
+  .field input[type="number"] {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .field input[type="number"]:focus {
+    border-color: var(--brand);
+  }
+
+  .field input[type="range"] {
+    width: 100%;
+    accent-color: var(--brand);
+  }
+
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .range-value {
+    font-weight: 700;
+    font-size: 13px;
+    min-width: 70px;
+    text-align: right;
+  }
+
+  .results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+  }
+
+  .result-card {
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .result-card .label {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .result-card .value {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--brand-dark);
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+  }
+
+  .comparison-card {
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .comparison-card.ai {
+    background: var(--accent-green-bg);
+    border: 1px solid #bbf7d0;
+  }
+
+  .comparison-card.human {
+    background: var(--accent-orange-bg);
+    border: 1px solid #fed7aa;
+  }
+
+  .comparison-card .label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .comparison-card.ai .label {
+    color: var(--accent-green);
+  }
+
+  .comparison-card.human .label {
+    color: var(--accent-orange);
+  }
+
+  .comparison-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .comparison-card .sub {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .disclaimer {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    border-top: 1px solid #e5e7eb;
+    margin-top: 14px;
+    padding-top: 12px;
+  }
+
+  .disclaimer strong {
+    color: var(--text);
+  }
+
+  footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Calculadora de costo — Asistente IA para tu pyme</h1>
+      <p>Estima cuánto costaría operar cada mes un asistente de atención al cliente como AURA, a partir de tu volumen real de conversaciones.</p>
+    </header>
+
+    <section class="card">
+      <h2>Tu volumen de conversaciones</h2>
+      <div class="inputs-grid">
+        <div class="field">
+          <label for="conversations-per-day">Conversaciones por día</label>
+          <input type="number" id="conversations-per-day" min="1" step="1" value="20" />
+          <span class="hint">Cuántas conversaciones de clientes esperas atender por día.</span>
+        </div>
+        <div class="field">
+          <label for="tokens-per-conversation">Tokens promedio por conversación</label>
+          <div class="range-row">
+            <input type="range" id="tokens-per-conversation" min="500" max="40000" step="1" value="14703" />
+            <span class="range-value" id="tokens-per-conversation-value">14703</span>
+          </div>
+          <span class="hint">Valor por defecto: 14703, el promedio real observado en las pruebas de este proyecto.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Costo estimado del asistente IA</h2>
+      <div class="results-grid">
+        <div class="result-card">
+          <span class="label">Por día</span>
+          <span class="value" id="cost-day">—</span>
+        </div>
+        <div class="result-card">
+          <span class="label">Por mes</span>
+          <span class="value" id="cost-month">—</span>
+        </div>
+        <div class="result-card">
+          <span class="label">Por año</span>
+          <span class="value" id="cost-year">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Comparación ilustrativa: IA vs. persona atendiendo el mismo volumen</h2>
+      <div class="comparison-grid">
+        <div class="comparison-card ai">
+          <span class="label">Asistente IA · costo mensual</span>
+          <span class="value" id="compare-ai-cost">—</span>
+        </div>
+        <div class="comparison-card human">
+          <span class="label">Persona · costo mensual estimado</span>
+          <span class="value" id="compare-human-cost">—</span>
+          <span class="sub" id="compare-human-hours">—</span>
+        </div>
+      </div>
+      <p class="disclaimer">
+        <strong>Nota:</strong> la comparación con el costo de una persona es una
+        estimación orientativa, no una cifra exacta. Se calcula a partir de un
+        salario mínimo colombiano aproximado más prestaciones (valores de
+        referencia, no oficiales) y un tiempo promedio ilustrativo de atención
+        por conversación humana. El objetivo es mostrar visualmente la diferencia
+        de escala de costo entre ambas opciones, no hacer una afirmación
+        financiera precisa. Ajusta estos supuestos a tu propia realidad antes de
+        tomar decisiones.
+      </p>
+    </section>
+
+    <footer>AURA · El Tornillo Feliz — herramienta de estimación, calculo 100% local en el navegador, sin conexión a servidores.</footer>
+  </div>
+
+  <script>
+    // Mismos valores de referencia que app/core/config.py (PRICE_PER_MILLION_INPUT_TOKENS /
+    // PRICE_PER_MILLION_OUTPUT_TOKENS). Son APROXIMADOS, basados en el pricing publico
+    // conocido de Claude Sonnet al momento de escribir esto — NO son autoritativos.
+    // Verificar y actualizar contra el pricing vigente en https://www.anthropic.com/pricing
+    const PRICE_PER_MILLION_INPUT_TOKENS = 3.0;
+    const PRICE_PER_MILLION_OUTPUT_TOKENS = 15.0;
+
+    // Este artifact no tiene el split real input/output por conversacion (eso vive en
+    // token_usage en la base de datos), asi que se usa un precio ponderado aproximado.
+    // Se asume ~70% de los tokens como input y ~30% como output: en un asistente con
+    // tool use, el historial completo de la conversacion se reenvia como input en cada
+    // llamada del loop, lo que infla el input mucho mas que el output (la respuesta
+    // final es texto corto). Es una aproximacion razonable, no un dato medido.
+    const BLENDED_PRICE_PER_MILLION_TOKENS =
+      0.7 * PRICE_PER_MILLION_INPUT_TOKENS + 0.3 * PRICE_PER_MILLION_OUTPUT_TOKENS;
+
+    // Valores de referencia ilustrativos para la comparacion con una persona, NO
+    // cifras oficiales. Ajustar al salario minimo y prestaciones vigentes en Colombia.
+    const SALARIO_MINIMO_MENSUAL_COP = 1300000;
+    const AUXILIO_TRANSPORTE_COP = 162000;
+    const FACTOR_PRESTACIONES = 1.52; // cesantias, prima, vacaciones, seguridad social patronal (aprox)
+    const HORAS_LABORALES_MES = 220;
+    const MINUTOS_ATENCION_HUMANA_POR_CONVERSACION = 4; // supuesto ilustrativo, no medido
+
+    const costoHoraPersona =
+      ((SALARIO_MINIMO_MENSUAL_COP + AUXILIO_TRANSPORTE_COP) * FACTOR_PRESTACIONES) /
+      HORAS_LABORALES_MES;
+
+    const conversationsInput = document.getElementById("conversations-per-day");
+    const tokensInput = document.getElementById("tokens-per-conversation");
+    const tokensValueLabel = document.getElementById("tokens-per-conversation-value");
+
+    const costDayEl = document.getElementById("cost-day");
+    const costMonthEl = document.getElementById("cost-month");
+    const costYearEl = document.getElementById("cost-year");
+    const compareAiEl = document.getElementById("compare-ai-cost");
+    const compareHumanEl = document.getElementById("compare-human-cost");
+    const compareHumanHoursEl = document.getElementById("compare-human-hours");
+
+    function formatUsd(value) {
+      return value.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+
+    function formatCop(value) {
+      return value.toLocaleString("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      });
+    }
+
+    function recalculate() {
+      const conversationsPerDay = Math.max(0, Number(conversationsInput.value) || 0);
+      const tokensPerConversation = Math.max(0, Number(tokensInput.value) || 0);
+      tokensValueLabel.textContent = tokensPerConversation.toLocaleString("es-CO");
+
+      const tokensPerDay = conversationsPerDay * tokensPerConversation;
+      const costPerDayUsd = (tokensPerDay / 1_000_000) * BLENDED_PRICE_PER_MILLION_TOKENS;
+      const costPerMonthUsd = costPerDayUsd * 30;
+      const costPerYearUsd = costPerDayUsd * 365;
+
+      costDayEl.textContent = formatUsd(costPerDayUsd);
+      costMonthEl.textContent = formatUsd(costPerMonthUsd);
+      costYearEl.textContent = formatUsd(costPerYearUsd);
+      compareAiEl.textContent = formatUsd(costPerMonthUsd);
+
+      const minutosPorDia = conversationsPerDay * MINUTOS_ATENCION_HUMANA_POR_CONVERSACION;
+      const horasPorDia = minutosPorDia / 60;
+      const costoHumanoMensualCop = horasPorDia * 30 * costoHoraPersona;
+
+      compareHumanEl.textContent = formatCop(costoHumanoMensualCop);
+      compareHumanHoursEl.textContent =
+        `≈ ${horasPorDia.toFixed(1)} h/día atendiendo, a una tarifa de referencia`;
+    }
+
+    conversationsInput.addEventListener("input", recalculate);
+    tokensInput.addEventListener("input", recalculate);
+
+    recalculate();
+  </script>
+</body>
+</html>
