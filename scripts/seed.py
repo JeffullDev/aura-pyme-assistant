@@ -136,6 +136,21 @@ POLICIES = [
 def main() -> None:
     client = get_supabase_client()
 
+    # Idempotencia: si el business ya existe (por nombre), no se vuelve a sembrar
+    # nada. catalog_item y policy siempre se insertan junto con el business en la
+    # misma corrida, asi que basta con este chequeo para evitar duplicados.
+    existing = (
+        client.table("business")
+        .select("id")
+        .eq("name", BUSINESS["name"])
+        .limit(1)
+        .execute()
+        .data
+    )
+    if existing:
+        print(f"Business ya existe: {existing[0]['id']} (seed omitido, no se duplico nada)")
+        return
+
     business_result = client.table("business").insert(BUSINESS).execute()
     business_id = business_result.data[0]["id"]
     print(f"Business creado: {business_id}")
