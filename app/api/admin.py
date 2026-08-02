@@ -41,11 +41,16 @@ def list_sessions(status: str | None = Query(default=None)) -> list[dict]:
 
 
 @router.get("/sessions/{session_id}/messages")
-def session_messages(session_id: str) -> list[dict]:
-    if repository.get_session(session_id) is None:
+def session_messages(session_id: str) -> dict:
+    session = repository.get_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
 
-    return repository.get_messages(session_id)
+    return {
+        "status": session["status"],
+        "ended_at": session.get("ended_at"),
+        "messages": repository.get_messages(session_id),
+    }
 
 
 @router.get("/stats")

@@ -105,6 +105,10 @@ body {
   display: inline-block;
 }
 
+.status-dot-offline {
+  background: #9ca3af;
+}
+
 .btn-new-conversation {
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.35);
@@ -122,6 +126,17 @@ body {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.btn-new-conversation-highlight {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
+.btn-new-conversation-highlight:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
 .escalation-banner {
   background: var(--escalation-bg);
   border-bottom: 1px solid var(--escalation-border);
@@ -130,6 +145,12 @@ body {
   padding: 10px 16px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.escalation-banner-ended {
+  background: #f3f4f6;
+  border-bottom: 1px solid #d1d5db;
+  color: #374151;
 }
 
 .messages {
@@ -842,6 +863,12 @@ body {
   font-size: 12px;
   font-weight: 600;
   padding: 8px 16px;
+}
+
+.thread-assigned-banner-readonly {
+  background: #f3f4f6;
+  border-bottom: 1px solid #d1d5db;
+  color: var(--text-muted);
 }
 
 .status-badge {

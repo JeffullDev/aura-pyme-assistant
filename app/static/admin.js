@@ -156,6 +156,47 @@ async function fetchJson(url) {
   return response.json();
 }
 
+let sessionsListSnapshot = null;
+
+function sessionRowContent(session) {
+  const assignedLabel =
+    session.status === "assigned" && session.assigned_agent_name
+      ? `<span class="session-assigned-label">Asignada a ${escapeHtml(session.assigned_agent_name)}</span>`
+      : "";
+
+  return `
+    <div class="session-row-main">
+      <span class="session-user">${escapeHtml(session.user_identifier)}</span>
+      <span class="status-badge status-${session.status}">${STATUS_LABELS[session.status] || session.status}</span>
+    </div>
+    ${assignedLabel}
+    <div class="session-row-meta">
+      <span>${formatDate(session.started_at)}</span>
+      <span>${session.message_count} mensaje${session.message_count === 1 ? "" : "s"}</span>
+      <span class="session-cost">${formatCost(session.estimated_cost)}</span>
+    </div>
+  `;
+}
+
+function updateSessionRow(row, session) {
+  row.classList.toggle("selected", session.id === selectedSessionId);
+  row.innerHTML = sessionRowContent(session);
+}
+
+function buildSessionRow(session) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "session-row";
+  row.dataset.sessionId = session.id;
+  row.addEventListener("click", () => selectSession(session.id));
+  updateSessionRow(row, session);
+  return row;
+}
+
+// Diffea contra lo ya renderizado en vez de reconstruir la lista entera: si
+// nada cambio no toca el DOM (evita parpadeo), y si algo cambio reutiliza las
+// filas existentes (reordenandolas con insertBefore en vez de recrearlas)
+// para no perder el scroll ni la seleccion mientras el asesor esta trabajando.
 function renderSessions(sessions) {
   // No se resetea sessionsById por completo: si una busqueda filtra la sesion
   // seleccionada fuera de la lista visible, sessionsById[selectedSessionId]
@@ -167,41 +208,46 @@ function renderSessions(sessions) {
   sessionsCountEl.textContent = `${sessions.length} sesión${sessions.length === 1 ? "" : "es"}`;
 
   if (sessions.length === 0) {
+    sessionsListSnapshot = "[]";
     sessionsListEl.innerHTML = '<p class="admin-empty">No hay sesiones con este filtro.</p>';
     return;
   }
 
-  sessionsListEl.innerHTML = "";
+  const snapshot = JSON.stringify(sessions);
+  const hasPlaceholder = !!sessionsListEl.querySelector(".admin-empty");
+  if (snapshot === sessionsListSnapshot && !hasPlaceholder) {
+    return;
+  }
+  sessionsListSnapshot = snapshot;
+
+  if (hasPlaceholder) {
+    sessionsListEl.innerHTML = "";
+  }
+
+  const existingRows = new Map();
+  sessionsListEl.querySelectorAll(".session-row").forEach((row) => {
+    existingRows.set(row.dataset.sessionId, row);
+  });
+
+  let previousRow = null;
   sessions.forEach((session) => {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "session-row";
-    row.dataset.sessionId = session.id;
-    if (session.id === selectedSessionId) {
-      row.classList.add("selected");
+    let row = existingRows.get(session.id);
+    if (row) {
+      updateSessionRow(row, session);
+      existingRows.delete(session.id);
+    } else {
+      row = buildSessionRow(session);
     }
 
-    const assignedLabel =
-      session.status === "assigned" && session.assigned_agent_name
-        ? `<span class="session-assigned-label">Asignada a ${escapeHtml(session.assigned_agent_name)}</span>`
-        : "";
-
-    row.innerHTML = `
-      <div class="session-row-main">
-        <span class="session-user">${escapeHtml(session.user_identifier)}</span>
-        <span class="status-badge status-${session.status}">${STATUS_LABELS[session.status] || session.status}</span>
-      </div>
-      ${assignedLabel}
-      <div class="session-row-meta">
-        <span>${formatDate(session.started_at)}</span>
-        <span>${session.message_count} mensaje${session.message_count === 1 ? "" : "s"}</span>
-        <span class="session-cost">${formatCost(session.estimated_cost)}</span>
-      </div>
-    `;
-
-    row.addEventListener("click", () => selectSession(session.id));
-    sessionsListEl.appendChild(row);
+    const expectedNext = previousRow ? previousRow.nextElementSibling : sessionsListEl.firstElementChild;
+    if (expectedNext !== row) {
+      sessionsListEl.insertBefore(row, expectedNext);
+    }
+    previousRow = row;
   });
+
+  // Filas de sesiones que ya no estan en la lista filtrada.
+  existingRows.forEach((row) => row.remove());
 }
 
 function escapeHtml(text) {
@@ -215,46 +261,83 @@ function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
-function renderThread(messages) {
+function buildThreadEntry(msg) {
+  const entry = document.createElement("div");
+  entry.className = `thread-entry thread-entry-${msg.role}`;
+
+  const header = document.createElement("div");
+  header.className = "thread-entry-header";
+  let label = ROLE_LABELS[msg.role] || msg.role;
+  if (msg.role === "tool") {
+    label = `${ROLE_LABELS.tool} · ${msg.tool_name}`;
+  } else if (msg.role === "agent" && msg.tool_name) {
+    label = `${ROLE_LABELS.agent} · ${msg.tool_name}`;
+  }
+  header.innerHTML = `<span class="thread-entry-role">${escapeHtml(label)}</span><span class="thread-entry-time">${formatDate(msg.created_at)}</span>`;
+  entry.appendChild(header);
+
+  if (msg.role === "tool") {
+    if (msg.tool_input !== null) {
+      entry.appendChild(buildJsonBlock("Input", msg.tool_input));
+    }
+    if (msg.tool_output !== null) {
+      entry.appendChild(buildJsonBlock("Output", msg.tool_output));
+    }
+  } else if (msg.content) {
+    const content = document.createElement("p");
+    content.className = "thread-entry-content";
+    content.textContent = msg.content;
+    entry.appendChild(content);
+  }
+
+  return entry;
+}
+
+function isNearBottom(el, threshold = 80) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
+let threadRenderedSessionId = null;
+let threadRenderedCount = 0;
+
+// El historial de una sesion solo crece (nunca se edita ni se borra un
+// mensaje ya logueado), asi que diffear es tan simple como comparar cuantos
+// mensajes ya estan pintados contra los que llegan y agregar solo la cola
+// nueva — sin reconstruir el hilo completo en cada poll (eso es lo que
+// causaba el parpadeo y forzaba el scroll al fondo). Al cambiar de sesion se
+// resetea y se repinta completo.
+function updateThread(sessionId, messages) {
+  const isNewSession = sessionId !== threadRenderedSessionId;
+  if (isNewSession) {
+    threadRenderedSessionId = sessionId;
+    threadRenderedCount = 0;
+    threadViewEl.innerHTML = "";
+  }
+
   if (messages.length === 0) {
-    threadViewEl.innerHTML = '<p class="admin-empty">Esta sesión no tiene mensajes.</p>';
+    if (threadRenderedCount === 0) {
+      threadViewEl.innerHTML = '<p class="admin-empty">Esta sesión no tiene mensajes.</p>';
+    }
     return;
   }
 
-  threadViewEl.innerHTML = "";
-  messages.forEach((msg) => {
-    const entry = document.createElement("div");
-    entry.className = `thread-entry thread-entry-${msg.role}`;
+  if (!isNewSession && messages.length <= threadRenderedCount) {
+    return;
+  }
 
-    const header = document.createElement("div");
-    header.className = "thread-entry-header";
-    let label = ROLE_LABELS[msg.role] || msg.role;
-    if (msg.role === "tool") {
-      label = `${ROLE_LABELS.tool} · ${msg.tool_name}`;
-    } else if (msg.role === "agent" && msg.tool_name) {
-      label = `${ROLE_LABELS.agent} · ${msg.tool_name}`;
-    }
-    header.innerHTML = `<span class="thread-entry-role">${escapeHtml(label)}</span><span class="thread-entry-time">${formatDate(msg.created_at)}</span>`;
-    entry.appendChild(header);
+  const wasNearBottom = isNewSession || isNearBottom(threadViewEl);
+  if (threadRenderedCount === 0) {
+    threadViewEl.innerHTML = "";
+  }
 
-    if (msg.role === "tool") {
-      if (msg.tool_input !== null) {
-        entry.appendChild(buildJsonBlock("Input", msg.tool_input));
-      }
-      if (msg.tool_output !== null) {
-        entry.appendChild(buildJsonBlock("Output", msg.tool_output));
-      }
-    } else if (msg.content) {
-      const content = document.createElement("p");
-      content.className = "thread-entry-content";
-      content.textContent = msg.content;
-      entry.appendChild(content);
-    }
-
-    threadViewEl.appendChild(entry);
+  messages.slice(threadRenderedCount).forEach((msg) => {
+    threadViewEl.appendChild(buildThreadEntry(msg));
   });
+  threadRenderedCount = messages.length;
 
-  threadViewEl.scrollTop = threadViewEl.scrollHeight;
+  if (wasNearBottom) {
+    threadViewEl.scrollTop = threadViewEl.scrollHeight;
+  }
 }
 
 function buildJsonBlock(label, value) {
@@ -752,7 +835,7 @@ async function filterSessionsByTerm(term) {
     await Promise.all(
       toFetch.map(async (session) => {
         try {
-          const messages = await fetchJson(`/admin/sessions/${session.id}/messages`);
+          const { messages } = await fetchJson(`/admin/sessions/${session.id}/messages`);
           sessionMessagesCache[session.id] = messages
             .filter((msg) => msg.content)
             .map((msg) => msg.content.toLowerCase())
@@ -793,10 +876,25 @@ function startThreadPollingIfAssigned() {
   if (!session || session.status !== "assigned") return;
 
   threadPollTimer = setInterval(async () => {
-    if (!selectedSessionId) return;
+    const sessionId = selectedSessionId;
+    if (!sessionId) return;
     try {
-      const messages = await fetchJson(`/admin/sessions/${selectedSessionId}/messages`);
-      renderThread(messages);
+      const { status, ended_at, messages } = await fetchJson(`/admin/sessions/${sessionId}/messages`);
+      if (selectedSessionId !== sessionId) return;
+      updateThread(sessionId, messages);
+
+      // El poll trae el status real de la sesion: si otro asesor (u otra
+      // pestaña) la devolvio al bot, la cerro, o se auto-cerro por
+      // inactividad mientras este panel seguia leyendola, hay que reflejarlo
+      // aqui — no solo cuando el usuario recarga o vuelve a seleccionarla.
+      const cached = sessionsById[sessionId];
+      if (cached && (cached.status !== status || cached.ended_at !== ended_at)) {
+        sessionsById[sessionId] = { ...cached, status, ended_at };
+        updateHandoffControls();
+      }
+      if (status !== "assigned") {
+        stopThreadPolling();
+      }
     } catch (err) {
       // Silencioso: se reintenta en el siguiente ciclo.
     }
@@ -804,7 +902,14 @@ function startThreadPollingIfAssigned() {
 }
 
 async function loadSessions() {
-  sessionsListEl.innerHTML = '<p class="admin-empty">Cargando sesiones...</p>';
+  // Solo muestra el placeholder de carga si la lista esta vacia todavia: en
+  // recargas posteriores (tras tomar/cerrar/responder una conversacion) ya
+  // hay filas pintadas, y reemplazarlas por "Cargando..." de entrada anularia
+  // el diff de renderSessions — volveria a reconstruir la lista completa en
+  // cada accion, justo el parpadeo que se esta arreglando.
+  if (!sessionsListEl.querySelector(".session-row")) {
+    sessionsListEl.innerHTML = '<p class="admin-empty">Cargando sesiones...</p>';
+  }
   try {
     const url = currentStatus ? `/admin/sessions?status=${currentStatus}` : "/admin/sessions";
     allSessionsCache = await fetchJson(url);
@@ -814,14 +919,32 @@ async function loadSessions() {
   }
 }
 
+// Cubre tanto el aviso de "Asignada a X" como el aviso de solo-lectura para
+// sesiones terminales (closed/abandoned) — antes solo existia el primero, y
+// una sesion cerrada mientras el asesor la leia no mostraba ningun indicio
+// de por que el campo de respuesta desaparecio.
 function updateThreadAssignedBanner() {
   const session = sessionsById[selectedSessionId];
+  threadAssignedBannerEl.classList.remove("thread-assigned-banner-readonly");
+
   if (session && session.status === "assigned" && session.assigned_agent_name) {
     threadAssignedBannerEl.textContent = `Asignada a ${session.assigned_agent_name}`;
     threadAssignedBannerEl.hidden = false;
-  } else {
-    threadAssignedBannerEl.hidden = true;
+    return;
   }
+
+  if (session && (session.status === "closed" || session.status === "abandoned")) {
+    const closedLabel =
+      session.status === "abandoned"
+        ? `Cerrada automáticamente por inactividad el ${formatDate(session.ended_at)}`
+        : `Cerrada el ${formatDate(session.ended_at)}`;
+    threadAssignedBannerEl.textContent = `${closedLabel} · Solo lectura`;
+    threadAssignedBannerEl.classList.add("thread-assigned-banner-readonly");
+    threadAssignedBannerEl.hidden = false;
+    return;
+  }
+
+  threadAssignedBannerEl.hidden = true;
 }
 
 function updateHandoffControls() {
@@ -829,13 +952,14 @@ function updateHandoffControls() {
   if (!session) {
     handoffActionsEl.hidden = true;
     replyFormEl.hidden = true;
-    threadAssignedBannerEl.hidden = true;
+    updateThreadAssignedBanner();
     return;
   }
 
   const isAssigned = session.status === "assigned";
   // 'abandoned' (v1.3) es tan terminal como 'closed': la sesion se cerro sola
-  // por inactividad, no tiene sentido "tomarla" ni "cerrarla" de nuevo.
+  // por inactividad, no tiene sentido "tomarla" ni "cerrarla" de nuevo. Ambas
+  // son de solo lectura: sin campo de respuesta ni botones de handoff.
   const isTerminal = session.status === "closed" || session.status === "abandoned";
 
   handoffActionsEl.hidden = false;
@@ -853,13 +977,22 @@ async function selectSession(sessionId) {
     row.classList.toggle("selected", row.dataset.sessionId === sessionId);
   });
   threadViewEl.innerHTML = '<p class="admin-empty">Cargando hilo...</p>';
+  threadRenderedSessionId = null;
+  threadRenderedCount = 0;
   updateHandoffControls();
 
   try {
-    const messages = await fetchJson(`/admin/sessions/${sessionId}/messages`);
-    renderThread(messages);
+    const { status, ended_at, messages } = await fetchJson(`/admin/sessions/${sessionId}/messages`);
+    const cached = sessionsById[sessionId];
+    if (cached) {
+      sessionsById[sessionId] = { ...cached, status, ended_at };
+    }
+    updateThread(sessionId, messages);
+    updateHandoffControls();
   } catch (err) {
     threadViewEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar el hilo de la conversación.</p>';
+    threadRenderedSessionId = null;
+    threadRenderedCount = 0;
   }
 
   startThreadPollingIfAssigned();

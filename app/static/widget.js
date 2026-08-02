@@ -44,7 +44,12 @@
   const BANNER_TEXT = {
     escalated: "🙋 Un asesor humano se pondrá en contacto contigo pronto. Mientras tanto, puedes seguir escribiendo.",
     assigned: "🙋 Ya estás hablando con un asesor humano.",
+    closed: "✅ Esta conversación ha finalizado. Inicia una nueva conversación para seguir escribiendo.",
+    abandoned: "⌛ Esta conversación se cerró por inactividad. Inicia una nueva conversación para seguir escribiendo.",
   };
+
+  const HUMAN_STATUSES = ["escalated", "assigned"];
+  const ENDED_STATUSES = ["closed", "abandoned"];
 
   const GREETING = config.businessName
     ? `¡Hola! Soy el asistente virtual de ${config.businessName}. ¿En qué puedo ayudarte hoy?`
@@ -52,6 +57,8 @@
 
   let pollTimer = null;
   let lastPolledAt = null;
+  // Ver comentario de `conversationEnded` en app/static/script.js.
+  let conversationEnded = false;
 
   // ---------- Shadow DOM: markup + estilos aislados ----------
 
@@ -161,6 +168,9 @@
       background: #4ade80;
       display: inline-block;
     }
+    .aura-status-dot-offline {
+      background: #9ca3af;
+    }
     .aura-new-btn {
       background: rgba(255, 255, 255, 0.15);
       border: 1px solid rgba(255, 255, 255, 0.35);
@@ -175,6 +185,15 @@
     .aura-new-btn:hover {
       background: rgba(255, 255, 255, 0.28);
     }
+    .aura-new-btn-highlight {
+      background: #ffffff;
+      border-color: #ffffff;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+    .aura-new-btn-highlight:hover {
+      background: rgba(255, 255, 255, 0.85);
+    }
     .aura-banner {
       background: #fff7ed;
       border-bottom: 1px solid #fb923c;
@@ -186,6 +205,11 @@
     }
     .aura-banner[hidden] {
       display: none;
+    }
+    .aura-banner-ended {
+      background: #f3f4f6;
+      border-bottom: 1px solid #d1d5db;
+      color: #374151;
     }
     .aura-messages {
       flex: 1;
@@ -317,7 +341,7 @@
           <div class="aura-avatar">💬</div>
           <div>
             <div class="aura-header-title">${escapeHtml(config.businessName || "Asistente virtual")}</div>
-            <p class="aura-header-status"><span class="aura-status-dot"></span>en línea</p>
+            <p class="aura-header-status"><span id="aura-status-dot" class="aura-status-dot"></span><span id="aura-status-text">en línea</span></p>
           </div>
         </div>
         <button id="aura-new-btn" class="aura-new-btn" type="button">Nueva conversación</button>
@@ -368,6 +392,8 @@
   const inputEl = shadow.getElementById("aura-input");
   const sendBtnEl = shadow.getElementById("aura-send");
   const newBtnEl = shadow.getElementById("aura-new-btn");
+  const statusDotEl = shadow.getElementById("aura-status-dot");
+  const statusTextEl = shadow.getElementById("aura-status-text");
 
   // ---------- Estado del panel (abierto/cerrado) ----------
 
@@ -468,8 +494,23 @@
   }
 
   function setSending(isSending) {
+    if (conversationEnded) return;
     inputEl.disabled = isSending;
     sendBtnEl.disabled = isSending;
+  }
+
+  function setOnlineIndicator(isOnline) {
+    statusDotEl.classList.toggle("aura-status-dot-offline", !isOnline);
+    statusTextEl.textContent = isOnline ? "en línea" : "Conversación finalizada";
+  }
+
+  function setConversationEnded(isEnded) {
+    conversationEnded = isEnded;
+    inputEl.disabled = isEnded;
+    sendBtnEl.disabled = isEnded;
+    inputEl.placeholder = isEnded ? "Esta conversación ha finalizado" : "Escribe tu mensaje...";
+    newBtnEl.classList.toggle("aura-new-btn-highlight", isEnded);
+    setOnlineIndicator(!isEnded);
   }
 
   function stopPolling() {
@@ -493,7 +534,7 @@
         const response = await fetch(url);
         if (!response.ok) return;
 
-        const messages = await response.json();
+        const { status, messages } = await response.json();
         messages.forEach((msg) => {
           lastPolledAt = msg.created_at;
           if (msg.role !== "agent") return;
@@ -503,6 +544,10 @@
           }
           appendMessage("agent", msg.content, { agentName: msg.tool_name });
         });
+
+        if (sessionId === getSessionId()) {
+          setStatus(sessionId, status);
+        }
       } catch {
         // Silencioso: se reintenta en el siguiente tick.
       }
@@ -514,11 +559,17 @@
 
   function setStatus(sessionId, status) {
     localStorage.setItem(STORAGE_KEYS.status, status);
-    const showBanner = status === "escalated" || status === "assigned";
-    bannerEl.hidden = !showBanner;
+
+    const isHuman = HUMAN_STATUSES.includes(status);
+    const isEnded = ENDED_STATUSES.includes(status);
+
+    bannerEl.hidden = !(isHuman || isEnded);
+    bannerEl.classList.toggle("aura-banner-ended", isEnded);
     bannerEl.textContent = BANNER_TEXT[status] || "";
 
-    if (showBanner) {
+    setConversationEnded(isEnded);
+
+    if (isHuman) {
       startPolling(sessionId);
     } else {
       stopPolling();
@@ -548,6 +599,7 @@
     const message = inputEl.value.trim();
     if (!message) return;
 
+    const priorSessionId = getSessionId();
     appendMessage("user", message);
     inputEl.value = "";
     setSending(true);
@@ -555,6 +607,13 @@
 
     try {
       const data = await sendMessage(message);
+      // Ver comentario equivalente en handleSubmit de app/static/script.js.
+      if (priorSessionId && data.session_id !== priorSessionId) {
+        messagesEl.innerHTML = "";
+        localStorage.removeItem(STORAGE_KEYS.messages);
+        setConversationEnded(false);
+        appendMessage("user", message);
+      }
       setSessionId(data.session_id);
       if (data.reply) {
         appendMessage("assistant", data.reply);
@@ -580,6 +639,7 @@
     localStorage.removeItem(STORAGE_KEYS.status);
     messagesEl.innerHTML = "";
     bannerEl.hidden = true;
+    setConversationEnded(false);
     appendMessage("assistant", GREETING);
   }
 

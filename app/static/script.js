@@ -10,7 +10,12 @@ const POLL_INTERVAL_MS = 4000;
 const BANNER_TEXT = {
   escalated: "🙋 Un asesor humano se pondrá en contacto contigo pronto. Mientras tanto, puedes seguir escribiendo.",
   assigned: "🙋 Ya estás hablando con un asesor humano.",
+  closed: "✅ Esta conversación ha finalizado. Inicia una nueva conversación para seguir escribiendo.",
+  abandoned: "⌛ Esta conversación se cerró por inactividad. Inicia una nueva conversación para seguir escribiendo.",
 };
+
+const HUMAN_STATUSES = ["escalated", "assigned"];
+const ENDED_STATUSES = ["closed", "abandoned"];
 
 const messagesEl = document.getElementById("messages");
 const typingIndicatorEl = document.getElementById("typing-indicator");
@@ -19,9 +24,16 @@ const formEl = document.getElementById("chat-form");
 const inputEl = document.getElementById("message-input");
 const sendBtnEl = document.getElementById("send-btn");
 const newConversationBtnEl = document.getElementById("new-conversation-btn");
+const statusDotEl = document.getElementById("status-dot");
+const statusTextEl = document.getElementById("status-text");
 
 let pollTimer = null;
 let lastPolledAt = null;
+// Distinto de "sending" (deshabilitado momentaneamente mientras se envia un
+// mensaje): esto deshabilita el input de forma persistente porque la sesion
+// ya termino, y setSending no debe poder revertirlo por accidente al volver
+// del finally de handleSubmit.
+let conversationEnded = false;
 
 function getOrCreateUserIdentifier() {
   let userIdentifier = localStorage.getItem(STORAGE_KEYS.userIdentifier);
@@ -99,8 +111,26 @@ function setTyping(isTyping) {
 }
 
 function setSending(isSending) {
+  if (conversationEnded) return;
   inputEl.disabled = isSending;
   sendBtnEl.disabled = isSending;
+}
+
+function setOnlineIndicator(isOnline) {
+  statusDotEl.classList.toggle("status-dot-offline", !isOnline);
+  statusTextEl.textContent = isOnline ? "Asistente virtual · en línea" : "Conversación finalizada";
+}
+
+// Deshabilita el input de forma persistente y destaca "Nueva conversación"
+// como la siguiente accion posible — a diferencia de setSending, esto no se
+// revierte solo hasta que el cliente empieza una conversacion nueva.
+function setConversationEnded(isEnded) {
+  conversationEnded = isEnded;
+  inputEl.disabled = isEnded;
+  sendBtnEl.disabled = isEnded;
+  inputEl.placeholder = isEnded ? "Esta conversación ha finalizado" : "Escribe tu mensaje...";
+  newConversationBtnEl.classList.toggle("btn-new-conversation-highlight", isEnded);
+  setOnlineIndicator(!isEnded);
 }
 
 // Mientras un humano tiene la conversacion (escalated/assigned), el cliente
@@ -131,7 +161,7 @@ function startPolling(sessionId) {
       const response = await fetch(url);
       if (!response.ok) return;
 
-      const messages = await response.json();
+      const { status, messages } = await response.json();
       messages.forEach((msg) => {
         lastPolledAt = msg.created_at;
         if (msg.role !== "agent") return;
@@ -141,6 +171,13 @@ function startPolling(sessionId) {
         }
         appendMessage("agent", msg.content, { agentName: msg.tool_name });
       });
+
+      // El poll trae el status real de la sesion: si el asesor la cierra (o
+      // se auto-cierra por inactividad) mientras el cliente la tiene abierta,
+      // hay que reflejarlo aqui mismo, no solo al enviar el siguiente mensaje.
+      if (sessionId === getSessionId()) {
+        setStatus(sessionId, status);
+      }
     } catch (err) {
       // Silencioso: se reintenta en el siguiente tick.
     }
@@ -152,11 +189,19 @@ function startPolling(sessionId) {
 
 function setStatus(sessionId, status) {
   localStorage.setItem(STORAGE_KEYS.status, status);
-  const showBanner = status === "escalated" || status === "assigned";
-  escalationBannerEl.hidden = !showBanner;
+
+  const isHuman = HUMAN_STATUSES.includes(status);
+  const isEnded = ENDED_STATUSES.includes(status);
+
+  escalationBannerEl.hidden = !(isHuman || isEnded);
+  escalationBannerEl.classList.toggle("escalation-banner-ended", isEnded);
   escalationBannerEl.textContent = BANNER_TEXT[status] || "";
 
-  if (showBanner) {
+  setConversationEnded(isEnded);
+
+  // Una vez terminada la sesion no llegaran mas mensajes: seguir consultando
+  // no tiene sentido y solo mantendria vivo un timer sin proposito.
+  if (isHuman) {
     startPolling(sessionId);
   } else {
     stopPolling();
@@ -186,6 +231,7 @@ async function handleSubmit(event) {
   const message = inputEl.value.trim();
   if (!message) return;
 
+  const priorSessionId = getSessionId();
   appendMessage("user", message);
   inputEl.value = "";
   setSending(true);
@@ -193,6 +239,18 @@ async function handleSubmit(event) {
 
   try {
     const data = await sendMessage(message);
+    // Si la sesion local estaba closed/abandoned (o se cerro en el servidor sin
+    // que este cliente lo supiera todavia, p.ej. auto-cierre por inactividad
+    // mientras el status local seguia en 'active'), el backend abre una sesion
+    // nueva de forma transparente (ver comentario en handle_message de
+    // agent_service.py). El hilo visible queda desincronizado si seguimos
+    // mostrandolo como continuacion: hay que arrancarlo de cero.
+    if (priorSessionId && data.session_id !== priorSessionId) {
+      messagesEl.innerHTML = "";
+      localStorage.removeItem(STORAGE_KEYS.messages);
+      setConversationEnded(false);
+      appendMessage("user", message);
+    }
     setSessionId(data.session_id);
     // reply es null cuando el bot esta suprimido (sesion escalated/assigned):
     // no se renderiza una burbuja vacia del asistente en ese caso.
@@ -220,6 +278,7 @@ function startNewConversation() {
   localStorage.removeItem(STORAGE_KEYS.status);
   messagesEl.innerHTML = "";
   escalationBannerEl.hidden = true;
+  setConversationEnded(false);
   appendMessage(
     "assistant",
     "¡Hola! Soy el asistente virtual de El Tornillo Feliz. ¿En qué puedo ayudarte hoy?"

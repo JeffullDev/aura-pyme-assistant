@@ -91,7 +91,9 @@ def main() -> None:
         print(f"\n{'=' * 70}\n6) Polling del cliente: debe ver el mensaje del agente\n{'=' * 70}")
         response = client.get(f"{BASE_URL}/chat/{session_id}/messages")
         response.raise_for_status()
-        messages = response.json()
+        poll_data = response.json()
+        assert poll_data["status"] == "assigned"
+        messages = poll_data["messages"]
         for msg in messages:
             print(msg)
         agent_messages = [m for m in messages if m["role"] == "agent"]
@@ -104,7 +106,7 @@ def main() -> None:
         last_created_at = messages[-1]["created_at"]
         response = client.get(f"{BASE_URL}/chat/{session_id}/messages", params={"since": last_created_at})
         response.raise_for_status()
-        incremental = response.json()
+        incremental = response.json()["messages"]
         print(f"mensajes nuevos desde {last_created_at}: {incremental}")
         assert incremental == []
 

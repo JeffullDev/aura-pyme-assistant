@@ -130,9 +130,10 @@ def handle_message(
     else:
         session = repository.get_session(session_id)
         session_status = session["status"] if session else "active"
-        # 'closed' se trata como el arranque de una conversacion nueva: no se
-        # reabre la sesion cerrada, se crea otra desde cero.
-        if session_status == "closed":
+        # 'closed' y 'abandoned' se tratan como el arranque de una conversacion
+        # nueva: son igual de terminales (ver comentario en updateHandoffControls
+        # de admin.js), no se reabre la sesion vieja, se crea otra desde cero.
+        if session_status in ("closed", "abandoned"):
             session_id = repository.create_session(business_id, user_identifier)["id"]
             session_status = "active"
 

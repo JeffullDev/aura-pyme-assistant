@@ -33,11 +33,16 @@ def chat(request: ChatRequest) -> dict:
 
 
 @router.get("/chat/{session_id}/messages")
-def get_chat_messages(session_id: str, since: str | None = Query(default=None)) -> list[dict]:
+def get_chat_messages(session_id: str, since: str | None = Query(default=None)) -> dict:
     """Polling publico para el cliente mientras la conversacion esta en manos
     de un humano: devuelve los mensajes visibles (user/assistant/agent, nunca
-    'tool') posteriores a `since`."""
-    if repository.get_session(session_id) is None:
+    'tool') posteriores a `since`, junto con el status actual de la sesion
+    (el frontend lo necesita para detectar cuando la sesion se cierra)."""
+    session = repository.get_session(session_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
 
-    return repository.get_messages_since(session_id, since)
+    return {
+        "status": session["status"],
+        "messages": repository.get_messages_since(session_id, since),
+    }
