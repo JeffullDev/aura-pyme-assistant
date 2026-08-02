@@ -19,6 +19,10 @@
         <h1>Panel de conversaciones</h1>
         <p class="admin-subtitle">El Tornillo Feliz · vista de solo lectura</p>
       </div>
+      <div class="admin-agent-name">
+        <label for="agent-name-input">Tu nombre</label>
+        <input id="agent-name-input" type="text" placeholder="ej. María" autocomplete="off" />
+      </div>
       <a class="btn-new-conversation" href="/">Ir al chat</a>
     </header>
 
@@ -51,6 +55,7 @@
         <button class="filter-btn active" data-status="">Todas</button>
         <button class="filter-btn" data-status="active">Activas</button>
         <button class="filter-btn" data-status="escalated">Escaladas</button>
+        <button class="filter-btn" data-status="assigned">Asignadas</button>
         <button class="filter-btn" data-status="closed">Cerradas</button>
       </div>
 
@@ -68,10 +73,19 @@
         <section class="admin-panel">
           <div class="admin-panel-header">
             <h2>Hilo de la conversación</h2>
+            <div class="handoff-actions" id="handoff-actions" hidden>
+              <button id="take-btn" type="button" class="btn-handoff">Tomar conversación</button>
+              <button id="return-btn" type="button" class="btn-handoff btn-secondary" hidden>Devolver al bot</button>
+              <button id="close-btn" type="button" class="btn-handoff btn-secondary" hidden>Cerrar</button>
+            </div>
           </div>
           <div id="thread-view" class="thread-view">
             <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
           </div>
+          <form id="reply-form" class="reply-form" hidden>
+            <input id="reply-input" type="text" placeholder="Escribe como agente..." autocomplete="off" />
+            <button id="reply-send-btn" type="submit">Enviar</button>
+          </form>
         </section>
       </div>
     </section>

@@ -5,7 +5,7 @@ from typing import Any
 
 from app.infrastructure.supabase_client import get_supabase_client
 
-HISTORY_ROLES = ("user", "assistant")
+HISTORY_ROLES = ("user", "assistant", "agent")
 
 STOPWORDS = {
     "de", "del", "la", "las", "el", "los", "un", "una", "unos", "unas",
@@ -153,6 +153,45 @@ def escalate_session(session_id: str) -> None:
         .eq("id", session_id)
         .execute()
     )
+
+
+def take_session(session_id: str, agent_name: str) -> dict[str, Any]:
+    result = (
+        get_supabase_client()
+        .table("chat_session")
+        .update(
+            {
+                "status": "assigned",
+                "assigned_agent_name": agent_name,
+                "assigned_at": datetime.utcnow().isoformat(),
+            }
+        )
+        .eq("id", session_id)
+        .execute()
+    )
+    return result.data[0]
+
+
+def return_session_to_bot(session_id: str) -> dict[str, Any]:
+    result = (
+        get_supabase_client()
+        .table("chat_session")
+        .update({"status": "active", "assigned_agent_name": None, "assigned_at": None})
+        .eq("id", session_id)
+        .execute()
+    )
+    return result.data[0]
+
+
+def close_session(session_id: str) -> dict[str, Any]:
+    result = (
+        get_supabase_client()
+        .table("chat_session")
+        .update({"status": "closed"})
+        .eq("id", session_id)
+        .execute()
+    )
+    return result.data[0]
 
 
 def log_message(
@@ -309,9 +348,33 @@ def get_messages(session_id: str) -> list[dict[str, Any]]:
     return result.data
 
 
+def get_messages_since(session_id: str, since: str | None) -> list[dict[str, Any]]:
+    """Para el polling publico del cliente: solo roles visibles de cara al
+    cliente (user/assistant/agent), nunca 'tool' (son internos, se ven solo en
+    el panel de admin). `tool_name` se reutiliza en filas role='agent' para
+    llevar el nombre del asesor que escribio ese mensaje (ver reply_to_session
+    en app/api/admin.py); en las demas filas siempre viene null."""
+    request = (
+        get_supabase_client()
+        .table("message_log")
+        .select("role, content, tool_name, created_at")
+        .eq("session_id", session_id)
+        .in_("role", ["user", "assistant", "agent"])
+        .order("created_at")
+    )
+    if since:
+        request = request.gt("created_at", since)
+    return request.execute().data
+
+
 def get_history(session_id: str) -> list[dict[str, str]]:
-    """Turnos user/assistant en texto plano. Las filas role='tool' quedan en la
-    tabla para trazabilidad, pero no se reenvian a Claude en el siguiente turno."""
+    """Turnos user/assistant/agent en texto plano, para reconstruir el historial
+    que se manda a Claude. Las filas role='tool' quedan en la tabla para
+    trazabilidad, pero no se reenvian a Claude en el siguiente turno. Los
+    mensajes 'agent' (humano respondiendo desde el panel) se remapean a
+    'assistant': la API de Claude solo conoce los roles user/assistant, y si la
+    conversacion vuelve al bot este necesita ver lo que dijo el humano como si
+    fuera su propio turno anterior."""
     result = (
         get_supabase_client()
         .table("message_log")
@@ -321,7 +384,11 @@ def get_history(session_id: str) -> list[dict[str, str]]:
         .order("created_at")
         .execute()
     )
-    return [row for row in result.data if row.get("content")]
+    return [
+        {"role": "assistant" if row["role"] == "agent" else row["role"], "content": row["content"]}
+        for row in result.data
+        if row.get("content")
+    ]
 
 
 def find_catalog_item_for_order(business_id: str, product_name: str) -> dict[str, Any] | None:

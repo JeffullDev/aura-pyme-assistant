@@ -2,7 +2,14 @@ const STORAGE_KEYS = {
   sessionId: "aura_session_id",
   userIdentifier: "aura_user_identifier",
   messages: "aura_messages",
-  escalated: "aura_escalated",
+  status: "aura_status",
+};
+
+const POLL_INTERVAL_MS = 4000;
+
+const BANNER_TEXT = {
+  escalated: "🙋 Un asesor humano se pondrá en contacto contigo pronto. Mientras tanto, puedes seguir escribiendo.",
+  assigned: "🙋 Ya estás hablando con un asesor humano.",
 };
 
 const messagesEl = document.getElementById("messages");
@@ -12,6 +19,9 @@ const formEl = document.getElementById("chat-form");
 const inputEl = document.getElementById("message-input");
 const sendBtnEl = document.getElementById("send-btn");
 const newConversationBtnEl = document.getElementById("new-conversation-btn");
+
+let pollTimer = null;
+let lastPolledAt = null;
 
 function getOrCreateUserIdentifier() {
   let userIdentifier = localStorage.getItem(STORAGE_KEYS.userIdentifier);
@@ -48,22 +58,34 @@ function sanitizeAssistantText(text) {
     .replace(/(^|\n)#{1,6}\s*/g, "$1");
 }
 
-function renderMessage(role, text) {
+function renderMessage(role, text, { agentName } = {}) {
   const displayText = role === "assistant" ? sanitizeAssistantText(text) : text;
   const bubble = document.createElement("div");
   bubble.className = `message ${role}`;
-  bubble.textContent = displayText;
+
+  if (role === "agent") {
+    const label = document.createElement("div");
+    label.className = "message-agent-label";
+    label.textContent = agentName || "Asesor";
+    bubble.appendChild(label);
+    const body = document.createElement("div");
+    body.textContent = displayText;
+    bubble.appendChild(body);
+  } else {
+    bubble.textContent = displayText;
+  }
+
   messagesEl.appendChild(bubble);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return bubble;
 }
 
 // role "error" es solo visual (fallos de red) y no se persiste ni se manda a Claude.
-function appendMessage(role, text, { persist = true } = {}) {
-  const bubble = renderMessage(role, text);
+function appendMessage(role, text, { persist = true, agentName } = {}) {
+  const bubble = renderMessage(role, text, { agentName });
   if (persist) {
     const stored = getStoredMessages();
-    stored.push({ role, text });
+    stored.push({ role, text, agentName });
     localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(stored));
   }
   return bubble;
@@ -76,14 +98,69 @@ function setTyping(isTyping) {
   }
 }
 
-function setEscalated(isEscalated) {
-  escalationBannerEl.hidden = !isEscalated;
-  localStorage.setItem(STORAGE_KEYS.escalated, isEscalated ? "1" : "0");
-}
-
 function setSending(isSending) {
   inputEl.disabled = isSending;
   sendBtnEl.disabled = isSending;
+}
+
+// Mientras un humano tiene la conversacion (escalated/assigned), el cliente
+// hace polling de mensajes nuevos (respuestas del asesor). Al volver a
+// active/closed, el polling se detiene.
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPolling(sessionId) {
+  if (pollTimer) return;
+
+  // Al reconectar (recarga de pagina) no sabemos el timestamp exacto del
+  // ultimo mensaje mostrado, asi que el primer tick trae todo el historial
+  // publico de la sesion y se salta los mensajes role='agent' que ya estaban
+  // en el cache local, para no duplicarlos.
+  let skipRemaining = getStoredMessages().filter((m) => m.role === "agent").length;
+  lastPolledAt = null;
+
+  async function tick() {
+    try {
+      const url = lastPolledAt
+        ? `/chat/${sessionId}/messages?since=${encodeURIComponent(lastPolledAt)}`
+        : `/chat/${sessionId}/messages`;
+      const response = await fetch(url);
+      if (!response.ok) return;
+
+      const messages = await response.json();
+      messages.forEach((msg) => {
+        lastPolledAt = msg.created_at;
+        if (msg.role !== "agent") return;
+        if (skipRemaining > 0) {
+          skipRemaining -= 1;
+          return;
+        }
+        appendMessage("agent", msg.content, { agentName: msg.tool_name });
+      });
+    } catch (err) {
+      // Silencioso: se reintenta en el siguiente tick.
+    }
+  }
+
+  tick();
+  pollTimer = setInterval(tick, POLL_INTERVAL_MS);
+}
+
+function setStatus(sessionId, status) {
+  localStorage.setItem(STORAGE_KEYS.status, status);
+  const showBanner = status === "escalated" || status === "assigned";
+  escalationBannerEl.hidden = !showBanner;
+  escalationBannerEl.textContent = BANNER_TEXT[status] || "";
+
+  if (showBanner) {
+    startPolling(sessionId);
+  } else {
+    stopPolling();
+  }
 }
 
 async function sendMessage(message) {
@@ -117,8 +194,12 @@ async function handleSubmit(event) {
   try {
     const data = await sendMessage(message);
     setSessionId(data.session_id);
-    appendMessage("assistant", data.reply);
-    setEscalated(data.status === "escalated");
+    // reply es null cuando el bot esta suprimido (sesion escalated/assigned):
+    // no se renderiza una burbuja vacia del asistente en ese caso.
+    if (data.reply) {
+      appendMessage("assistant", data.reply);
+    }
+    setStatus(data.session_id, data.status);
   } catch (err) {
     appendMessage(
       "error",
@@ -133,11 +214,12 @@ async function handleSubmit(event) {
 }
 
 function startNewConversation() {
+  stopPolling();
   localStorage.removeItem(STORAGE_KEYS.sessionId);
   localStorage.removeItem(STORAGE_KEYS.messages);
-  localStorage.removeItem(STORAGE_KEYS.escalated);
+  localStorage.removeItem(STORAGE_KEYS.status);
   messagesEl.innerHTML = "";
-  setEscalated(false);
+  escalationBannerEl.hidden = true;
   appendMessage(
     "assistant",
     "¡Hola! Soy el asistente virtual de El Tornillo Feliz. ¿En qué puedo ayudarte hoy?"
@@ -146,8 +228,9 @@ function startNewConversation() {
 
 function restoreConversation() {
   const stored = getStoredMessages();
-  stored.forEach(({ role, text }) => renderMessage(role, text));
-  setEscalated(localStorage.getItem(STORAGE_KEYS.escalated) === "1");
+  stored.forEach(({ role, text, agentName }) => renderMessage(role, text, { agentName }));
+  const status = localStorage.getItem(STORAGE_KEYS.status) || "active";
+  setStatus(getSessionId(), status);
 }
 
 formEl.addEventListener("submit", handleSubmit);

@@ -119,14 +119,31 @@ def handle_message(
     session_id: str | None,
     user_identifier: str,
     user_message: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     business = repository.get_business()
     business_id = business["id"]
 
     if session_id is None:
         session_id = repository.create_session(business_id, user_identifier)["id"]
+        session_status = "active"
+    else:
+        session = repository.get_session(session_id)
+        session_status = session["status"] if session else "active"
+        # 'closed' se trata como el arranque de una conversacion nueva: no se
+        # reabre la sesion cerrada, se crea otra desde cero.
+        if session_status == "closed":
+            session_id = repository.create_session(business_id, user_identifier)["id"]
+            session_status = "active"
 
     repository.log_message(session_id, role="user", content=user_message)
+
+    # Handoff a humano: si la sesion esta en cola ('escalated') o ya la tomo un
+    # humano ('assigned'), el bot se calla por completo. El mensaje del cliente
+    # ya quedo registrado arriba (trazabilidad intacta), pero no se llama a
+    # Claude ni se genera respuesta del bot; reply=None le indica al frontend
+    # que no hay burbuja de asistente que mostrar para este turno.
+    if session_status in ("escalated", "assigned"):
+        return {"session_id": session_id, "reply": None, "status": session_status}
 
     # Un mensaje vacio/solo-espacios nunca llega a Claude: get_history() descarta
     # contenido vacio al reconstruir el historial (filtro `if row.get("content")`),
