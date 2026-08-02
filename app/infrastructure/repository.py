@@ -297,6 +297,26 @@ def log_token_usage(
     )
 
 
+def _count_escalated_sessions(session_ids: list[str]) -> int:
+    """Cuenta sesiones que en algun momento llamaron a escalate_to_human, via el
+    log permanente de la tool call en message_log (role='tool', tool_name=
+    'escalate_to_human'). chat_session.status NO sirve como fuente historica:
+    se sobreescribe con el tiempo (escalated -> assigned -> closed), asi que una
+    conversacion cerrada despues de escalar ya no muestra rastro en su status."""
+    if not session_ids:
+        return 0
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("session_id")
+        .in_("session_id", session_ids)
+        .eq("tool_name", "escalate_to_human")
+        .execute()
+        .data
+    )
+    return len({row["session_id"] for row in rows})
+
+
 def get_business_stats(business_id: str) -> dict[str, Any]:
     sessions = (
         get_supabase_client()
@@ -307,16 +327,9 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
         .data
     )
     total_conversations = len(sessions)
-    if total_conversations == 0:
-        return {
-            "total_conversations": 0,
-            "total_tokens": 0,
-            "total_estimated_cost": 0.0,
-            "avg_tokens_per_conversation": 0.0,
-        }
-
     session_ids = [session["id"] for session in sessions]
-    token_totals = _token_totals_by_session(session_ids)
+
+    token_totals = _token_totals_by_session(session_ids) if session_ids else {}
     total_tokens = sum(entry["total_tokens"] for entry in token_totals.values())
     total_estimated_cost = sum(entry["estimated_cost"] for entry in token_totals.values())
 
@@ -328,11 +341,42 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
         total_tokens / sessions_with_usage if sessions_with_usage else 0.0
     )
 
+    escalated_conversations = _count_escalated_sessions(session_ids)
+
+    orders = (
+        get_supabase_client()
+        .table("orders")
+        .select("status, total")
+        .eq("business_id", business_id)
+        .execute()
+        .data
+    )
+    total_orders = len(orders)
+    orders_by_status: dict[str, int] = {}
+    for order in orders:
+        orders_by_status[order["status"]] = orders_by_status.get(order["status"], 0) + 1
+
+    # Un pedido cancelado nunca se cobro: no cuenta como ingreso ni entra al
+    # ticket promedio, pero si cuenta para total_orders/conversion_rate (el
+    # chat si convirtio en una intencion de compra, aunque luego se cancelara).
+    non_cancelled_orders = [order for order in orders if order["status"] != "cancelled"]
+    revenue_total = sum(float(order["total"]) for order in non_cancelled_orders)
+    avg_ticket = revenue_total / len(non_cancelled_orders) if non_cancelled_orders else 0.0
+    conversion_rate = (
+        (total_orders / total_conversations * 100) if total_conversations else 0.0
+    )
+
     return {
         "total_conversations": total_conversations,
+        "escalated_conversations": escalated_conversations,
         "total_tokens": total_tokens,
         "total_estimated_cost": total_estimated_cost,
         "avg_tokens_per_conversation": avg_tokens_per_conversation,
+        "total_orders": total_orders,
+        "orders_by_status": orders_by_status,
+        "revenue_total": revenue_total,
+        "avg_ticket": avg_ticket,
+        "conversion_rate": conversion_rate,
     }
 
 
@@ -502,6 +546,80 @@ def get_order_items(order_id: str) -> list[dict[str, Any]]:
         .table("order_items")
         .select("product_name, quantity, unit_price, subtotal")
         .eq("order_id", order_id)
+        .execute()
+        .data
+    )
+
+
+def list_orders(business_id: str, status: str | None = None) -> list[dict[str, Any]]:
+    """Panel de admin: pedidos con sus items, mismo patron anti-N+1 que
+    list_sessions (una query de orders + una batched de order_items por in_())."""
+    request = (
+        get_supabase_client()
+        .table("orders")
+        .select("*")
+        .eq("business_id", business_id)
+        .order("created_at", desc=True)
+    )
+    if status:
+        request = request.eq("status", status)
+    orders = request.execute().data
+    if not orders:
+        return []
+
+    order_ids = [order["id"] for order in orders]
+    items_rows = (
+        get_supabase_client()
+        .table("order_items")
+        .select("order_id, product_name, quantity, unit_price, subtotal")
+        .in_("order_id", order_ids)
+        .execute()
+        .data
+    )
+    items_by_order: dict[str, list[dict[str, Any]]] = {}
+    for row in items_rows:
+        items_by_order.setdefault(row["order_id"], []).append(row)
+
+    for order in orders:
+        order["items"] = items_by_order.get(order["id"], [])
+    return orders
+
+
+def get_order(order_id: str) -> dict[str, Any] | None:
+    result = (
+        get_supabase_client()
+        .table("orders")
+        .select("*")
+        .eq("id", order_id)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def update_order_status(order_id: str, status: str) -> dict[str, Any]:
+    result = (
+        get_supabase_client()
+        .table("orders")
+        .update({"status": status})
+        .eq("id", order_id)
+        .execute()
+    )
+    return result.data[0]
+
+
+def list_catalog(business_id: str) -> list[dict[str, Any]]:
+    """Catalogo completo del panel de admin, con el stock numerico REAL. A
+    diferencia de search_catalog (que alimenta al agente de cara al cliente y
+    cuyo resultado eventualmente se enmascara via stock_status en tools.py),
+    esta funcion es exclusiva del dueno viendo su propio inventario y nunca
+    debe enmascarar el numero de stock."""
+    return (
+        get_supabase_client()
+        .table("catalog_item")
+        .select("id, name, description, price, stock, category")
+        .eq("business_id", business_id)
+        .order("name")
         .execute()
         .data
     )

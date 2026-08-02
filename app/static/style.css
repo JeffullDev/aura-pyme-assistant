@@ -932,3 +932,193 @@ body {
 .growth-table tbody tr:last-child td {
   border-bottom: none;
 }
+
+/* ---------- Navegacion: badge "en cola" ---------- */
+
+.nav-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--escalation-border);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.filter-btn-queue {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------- Resumen (KPIs) ---------- */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.kpi-card {
+  padding: 20px 22px;
+  gap: 6px;
+}
+
+.kpi-card-primary {
+  border: 2px solid var(--brand);
+}
+
+.kpi-value {
+  font-size: 30px;
+}
+
+.kpi-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- Pedidos ---------- */
+
+.orders-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.order-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.order-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.order-reference {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.order-customer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.order-customer span {
+  color: var(--text-muted);
+}
+
+.order-items-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.order-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 10px;
+}
+
+.order-total {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.order-eta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.order-eta-overdue {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+.order-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-actions .btn-handoff {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.status-badge.status-pending {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.status-badge.status-confirmed {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-badge.status-in_transit {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.status-badge.status-delivered {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.status-cancelled {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+.status-badge.status-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+/* ---------- Inventario ---------- */
+
+.inventory-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inventory-table th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.inventory-table td {
+  white-space: normal;
+}
+
+.inventory-row-out td {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.inventory-row-low td {
+  background: var(--escalation-bg);
+}

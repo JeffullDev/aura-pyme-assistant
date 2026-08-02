@@ -1,6 +1,7 @@
 // Pestaña "Proyección de costos" del panel de admin. Usa las funciones puras
-// de roi_calculator.js (cargado antes que este script) y fetchJson, ya
-// definido en admin.js (cargado antes de este archivo).
+// de roi_calculator.js (cargado antes que este script) y fetchJson/switchAdminView,
+// ya definidos en admin.js (cargado antes de este archivo) -- ese archivo es el
+// dueño de la navegación por pestañas, comun a las 5 secciones del panel.
 
 const COSTS_DEFAULT_TOKENS_PER_CONVERSATION_FALLBACK = 14703;
 const COSTS_GROWTH_SCENARIOS = [
@@ -8,9 +9,6 @@ const COSTS_GROWTH_SCENARIOS = [
   { label: "x2 (doble)", multiplier: 2 },
   { label: "x5 (quíntuple)", multiplier: 5 },
 ];
-
-const tabButtons = document.querySelectorAll(".tab-btn");
-const adminViews = document.querySelectorAll(".admin-view");
 
 const costsConversationsInput = document.getElementById("costs-conversations-per-day");
 const costsTokensInput = document.getElementById("costs-tokens-per-conversation");
@@ -28,13 +26,6 @@ const costsCompareAiUsdSubEl = document.getElementById("costs-compare-ai-usd-sub
 const costsCompareHumanEl = document.getElementById("costs-compare-human");
 const costsCompareHumanHoursEl = document.getElementById("costs-compare-human-hours");
 const costsGrowthBodyEl = document.getElementById("costs-growth-body");
-
-function switchAdminView(view) {
-  tabButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.view === view));
-  adminViews.forEach((section) => {
-    section.hidden = section.id !== `view-${view}`;
-  });
-}
 
 function renderGrowthTable(conversationsPerDay, tokensPerConversation) {
   costsGrowthBodyEl.innerHTML = "";
@@ -93,10 +84,6 @@ async function loadCostsDefaults() {
   }
   recalculateCosts();
 }
-
-tabButtons.forEach((btn) => {
-  btn.addEventListener("click", () => switchAdminView(btn.dataset.view));
-});
 
 costsConversationsInput.addEventListener("input", recalculateCosts);
 costsTokensInput.addEventListener("input", recalculateCosts);

@@ -27,11 +27,45 @@
     </header>
 
     <nav class="admin-tabs" id="admin-tabs">
-      <button class="tab-btn active" data-view="conversations" type="button">Conversaciones</button>
+      <button class="tab-btn active" data-view="resumen" type="button">Resumen</button>
+      <button class="tab-btn" data-view="conversations" type="button">
+        Conversaciones
+        <span class="nav-badge" id="conversations-queue-badge" hidden>0</span>
+      </button>
+      <button class="tab-btn" data-view="orders" type="button">Pedidos</button>
+      <button class="tab-btn" data-view="inventory" type="button">Inventario</button>
       <button class="tab-btn" data-view="costs" type="button">Proyección de costos</button>
     </nav>
 
-    <section class="admin-view" id="view-conversations">
+    <section class="admin-view" id="view-resumen">
+      <div class="kpi-grid">
+        <div class="metric-card kpi-card kpi-card-primary">
+          <span class="metric-label">Ingresos generados por el asistente</span>
+          <span class="metric-value kpi-value" id="kpi-revenue">—</span>
+        </div>
+        <div class="metric-card kpi-card">
+          <span class="metric-label">Pedidos totales</span>
+          <span class="metric-value kpi-value" id="kpi-orders-total">—</span>
+          <span class="kpi-sub" id="kpi-conversion">Tasa de conversión: —</span>
+        </div>
+        <div class="metric-card kpi-card">
+          <span class="metric-label">Ticket promedio</span>
+          <span class="metric-value kpi-value" id="kpi-avg-ticket">—</span>
+        </div>
+        <div class="metric-card kpi-card">
+          <span class="metric-label">Conversaciones totales</span>
+          <span class="metric-value kpi-value" id="kpi-conversations-total">—</span>
+          <span class="kpi-sub" id="kpi-escalated">— escaladas a un humano</span>
+        </div>
+        <div class="metric-card kpi-card">
+          <span class="metric-label">Costo estimado en tokens</span>
+          <span class="metric-value kpi-value" id="kpi-token-cost">—</span>
+          <span class="kpi-sub" id="kpi-cost-vs-revenue">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-conversations" hidden>
       <div class="admin-metrics" id="admin-metrics">
         <div class="metric-card">
           <span class="metric-label">Total conversaciones</span>
@@ -54,7 +88,10 @@
       <div class="admin-filters" id="status-filters">
         <button class="filter-btn active" data-status="">Todas</button>
         <button class="filter-btn" data-status="active">Activas</button>
-        <button class="filter-btn" data-status="escalated">Escaladas</button>
+        <button class="filter-btn filter-btn-queue" data-status="escalated">
+          En cola
+          <span class="nav-badge" id="queue-filter-badge" hidden>0</span>
+        </button>
         <button class="filter-btn" data-status="assigned">Asignadas</button>
         <button class="filter-btn" data-status="closed">Cerradas</button>
       </div>
@@ -87,6 +124,37 @@
             <button id="reply-send-btn" type="submit">Enviar</button>
           </form>
         </section>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-orders" hidden>
+      <div class="admin-filters" id="orders-filters">
+        <button class="filter-btn active" data-order-status="">Todos</button>
+        <button class="filter-btn" data-order-status="pending">Pendiente</button>
+        <button class="filter-btn" data-order-status="confirmed">Confirmado</button>
+        <button class="filter-btn" data-order-status="in_transit">En camino</button>
+        <button class="filter-btn" data-order-status="delivered">Entregado</button>
+        <button class="filter-btn" data-order-status="cancelled">Cancelado</button>
+      </div>
+      <div id="orders-board" class="orders-board">
+        <p class="admin-empty">Cargando pedidos...</p>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-inventory" hidden>
+      <div class="inventory-summary" id="inventory-summary">Cargando inventario...</div>
+      <div class="growth-table-wrapper">
+        <table class="growth-table inventory-table" id="inventory-table">
+          <thead>
+            <tr>
+              <th data-sort="name">Producto</th>
+              <th data-sort="category">Categoría</th>
+              <th data-sort="price">Precio</th>
+              <th data-sort="stock">Stock</th>
+            </tr>
+          </thead>
+          <tbody id="inventory-body"></tbody>
+        </table>
       </div>
     </section>
 

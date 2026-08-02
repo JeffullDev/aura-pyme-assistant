@@ -7,6 +7,17 @@ router = APIRouter(prefix="/admin")
 
 VALID_STATUSES = {"active", "escalated", "assigned", "closed"}
 
+# pending -> confirmed -> in_transit -> delivered es la unica progresion lineal;
+# cancelled es alcanzable desde cualquier estado no terminal. delivered y
+# cancelled son terminales (sin transiciones salientes).
+ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"confirmed", "cancelled"},
+    "confirmed": {"in_transit", "cancelled"},
+    "in_transit": {"delivered", "cancelled"},
+    "delivered": set(),
+    "cancelled": set(),
+}
+
 
 class TakeRequest(BaseModel):
     agent_name: str
@@ -14,6 +25,10 @@ class TakeRequest(BaseModel):
 
 class ReplyRequest(BaseModel):
     message: str
+
+
+class OrderStatusRequest(BaseModel):
+    status: str
 
 
 @router.get("/sessions")
@@ -92,3 +107,40 @@ def close_session(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
 
     return repository.close_session(session_id)
+
+
+@router.get("/orders")
+def list_orders(status: str | None = Query(default=None)) -> list[dict]:
+    if status is not None and status not in ORDER_STATUS_TRANSITIONS:
+        raise HTTPException(status_code=400, detail=f"status invalido: {status}")
+
+    business_id = repository.get_business()["id"]
+    return repository.list_orders(business_id, status=status)
+
+
+@router.post("/orders/{order_id}/status")
+def update_order_status(order_id: str, request: OrderStatusRequest) -> dict:
+    if request.status not in ORDER_STATUS_TRANSITIONS:
+        raise HTTPException(status_code=400, detail=f"status invalido: {request.status}")
+
+    order = repository.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    current_status = order["status"]
+    allowed = ORDER_STATUS_TRANSITIONS[current_status]
+    if request.status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Transicion invalida: {current_status} -> {request.status}",
+        )
+
+    return repository.update_order_status(order_id, request.status)
+
+
+@router.get("/inventory")
+def inventory() -> list[dict]:
+    # Stock numerico real, sin enmascarar: este endpoint es para el dueno del
+    # negocio, no para el agente de cara al cliente (ver repository.list_catalog).
+    business_id = repository.get_business()["id"]
+    return repository.list_catalog(business_id)
