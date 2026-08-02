@@ -22,54 +22,149 @@
       <a class="btn-new-conversation" href="/">Ir al chat</a>
     </header>
 
-    <div class="admin-metrics" id="admin-metrics">
-      <div class="metric-card">
-        <span class="metric-label">Total conversaciones</span>
-        <span class="metric-value" id="metric-total-conversations">—</span>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Tokens totales</span>
-        <span class="metric-value" id="metric-total-tokens">—</span>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Costo estimado total</span>
-        <span class="metric-value" id="metric-total-cost">—</span>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Promedio de tokens / conversación</span>
-        <span class="metric-value" id="metric-avg-tokens">—</span>
-      </div>
-    </div>
+    <nav class="admin-tabs" id="admin-tabs">
+      <button class="tab-btn active" data-view="conversations" type="button">Conversaciones</button>
+      <button class="tab-btn" data-view="costs" type="button">Proyección de costos</button>
+    </nav>
 
-    <div class="admin-filters" id="status-filters">
-      <button class="filter-btn active" data-status="">Todas</button>
-      <button class="filter-btn" data-status="active">Activas</button>
-      <button class="filter-btn" data-status="escalated">Escaladas</button>
-      <button class="filter-btn" data-status="closed">Cerradas</button>
-    </div>
+    <section class="admin-view" id="view-conversations">
+      <div class="admin-metrics" id="admin-metrics">
+        <div class="metric-card">
+          <span class="metric-label">Total conversaciones</span>
+          <span class="metric-value" id="metric-total-conversations">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Tokens totales</span>
+          <span class="metric-value" id="metric-total-tokens">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Costo estimado total</span>
+          <span class="metric-value" id="metric-total-cost">—</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Promedio de tokens / conversación</span>
+          <span class="metric-value" id="metric-avg-tokens">—</span>
+        </div>
+      </div>
 
-    <div class="admin-layout">
-      <section class="admin-panel">
-        <div class="admin-panel-header">
-          <h2>Sesiones</h2>
-          <span id="sessions-count" class="admin-count"></span>
-        </div>
-        <div id="sessions-list" class="sessions-list">
-          <p class="admin-empty">Cargando sesiones...</p>
-        </div>
-      </section>
+      <div class="admin-filters" id="status-filters">
+        <button class="filter-btn active" data-status="">Todas</button>
+        <button class="filter-btn" data-status="active">Activas</button>
+        <button class="filter-btn" data-status="escalated">Escaladas</button>
+        <button class="filter-btn" data-status="closed">Cerradas</button>
+      </div>
 
-      <section class="admin-panel">
-        <div class="admin-panel-header">
-          <h2>Hilo de la conversación</h2>
+      <div class="admin-layout">
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <h2>Sesiones</h2>
+            <span id="sessions-count" class="admin-count"></span>
+          </div>
+          <div id="sessions-list" class="sessions-list">
+            <p class="admin-empty">Cargando sesiones...</p>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header">
+            <h2>Hilo de la conversación</h2>
+          </div>
+          <div id="thread-view" class="thread-view">
+            <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-costs" hidden>
+      <div class="card">
+        <h2>Tu volumen de conversaciones</h2>
+        <span class="hint" id="costs-avg-note">Cargando el promedio real de tokens por conversación...</span>
+        <div class="inputs-grid">
+          <div class="field">
+            <label for="costs-conversations-per-day">Conversaciones por día</label>
+            <input type="number" id="costs-conversations-per-day" min="1" step="1" value="20" />
+            <span class="hint">Cuántas conversaciones de clientes esperas atender por día.</span>
+          </div>
+          <div class="field">
+            <label for="costs-tokens-per-conversation">Tokens promedio por conversación</label>
+            <div class="range-row">
+              <input type="range" id="costs-tokens-per-conversation" min="500" max="40000" step="1" value="14703" />
+              <span class="range-value" id="costs-tokens-per-conversation-value">14703</span>
+            </div>
+          </div>
         </div>
-        <div id="thread-view" class="thread-view">
-          <p class="admin-empty">Selecciona una sesión de la lista para ver el hilo completo.</p>
+      </div>
+
+      <div class="card">
+        <h2>Costo estimado del asistente IA</h2>
+        <span class="hint">Anthropic factura en dólares (USD) — es el valor real que se paga. El equivalente en pesos (COP) es una referencia, convertida con una tasa de cambio fija.</span>
+        <div class="results-grid">
+          <div class="result-card">
+            <span class="label">Por día</span>
+            <span class="value" id="costs-day-usd">—</span>
+            <span class="value-sub" id="costs-day-cop">—</span>
+          </div>
+          <div class="result-card">
+            <span class="label">Por mes</span>
+            <span class="value" id="costs-month-usd">—</span>
+            <span class="value-sub" id="costs-month-cop">—</span>
+          </div>
+          <div class="result-card">
+            <span class="label">Por año</span>
+            <span class="value" id="costs-year-usd">—</span>
+            <span class="value-sub" id="costs-year-cop">—</span>
+          </div>
         </div>
-      </section>
-    </div>
+      </div>
+
+      <div class="card">
+        <h2>Comparación ilustrativa: IA vs. persona atendiendo el mismo volumen</h2>
+        <span class="hint">Ambas cifras están en la misma moneda (COP) para que la comparación sea real, no una entre dólares y pesos.</span>
+        <div class="comparison-grid">
+          <div class="comparison-card ai">
+            <span class="label">Asistente IA · costo mensual</span>
+            <span class="value" id="costs-compare-ai">—</span>
+            <span class="sub" id="costs-compare-ai-usd-sub">—</span>
+          </div>
+          <div class="comparison-card human">
+            <span class="label">Persona · costo mensual estimado</span>
+            <span class="value" id="costs-compare-human">—</span>
+            <span class="sub" id="costs-compare-human-hours">—</span>
+          </div>
+        </div>
+        <p class="disclaimer">
+          <strong>Nota:</strong> la comparación con el costo de una persona es una
+          estimación orientativa, no una cifra exacta, calculada a partir de un
+          salario mínimo colombiano aproximado más prestaciones y un tiempo
+          promedio ilustrativo de atención por conversación. El equivalente en
+          COP del costo del asistente IA usa una tasa de cambio de referencia
+          fija, no la tasa de mercado en tiempo real.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Proyección de crecimiento</h2>
+        <span class="hint">Cómo escala el costo mensual del asistente si tu volumen de conversaciones crece, manteniendo el mismo promedio de tokens por conversación.</span>
+        <div class="growth-table-wrapper">
+          <table class="growth-table">
+            <thead>
+              <tr>
+                <th>Escenario</th>
+                <th>Volumen</th>
+                <th>Costo mensual (USD)</th>
+                <th>Costo mensual (COP)</th>
+              </tr>
+            </thead>
+            <tbody id="costs-growth-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script src="/static/admin.js"></script>
+  <script src="/static/roi_calculator.js"></script>
+  <script src="/static/admin_costs.js"></script>
 </body>
 </html>

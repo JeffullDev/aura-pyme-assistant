@@ -70,6 +70,13 @@
     font-size: 16px;
   }
 
+  .card .hint {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -8px 0 14px;
+  }
+
   .inputs-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -147,9 +154,15 @@
   }
 
   .result-card .value {
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 700;
     color: var(--brand-dark);
+  }
+
+  .result-card .value-sub {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
   }
 
   .comparison-grid {
@@ -250,28 +263,34 @@
 
     <section class="card">
       <h2>Costo estimado del asistente IA</h2>
+      <span class="hint">Anthropic factura en dólares (USD) — es el valor real que se paga. El equivalente en pesos (COP) es una referencia, convertida con una tasa de cambio fija (ver nota al final).</span>
       <div class="results-grid">
         <div class="result-card">
           <span class="label">Por día</span>
-          <span class="value" id="cost-day">—</span>
+          <span class="value" id="cost-day-usd">—</span>
+          <span class="value-sub" id="cost-day-cop">—</span>
         </div>
         <div class="result-card">
           <span class="label">Por mes</span>
-          <span class="value" id="cost-month">—</span>
+          <span class="value" id="cost-month-usd">—</span>
+          <span class="value-sub" id="cost-month-cop">—</span>
         </div>
         <div class="result-card">
           <span class="label">Por año</span>
-          <span class="value" id="cost-year">—</span>
+          <span class="value" id="cost-year-usd">—</span>
+          <span class="value-sub" id="cost-year-cop">—</span>
         </div>
       </div>
     </section>
 
     <section class="card">
       <h2>Comparación ilustrativa: IA vs. persona atendiendo el mismo volumen</h2>
+      <span class="hint">Ambas cifras están en la misma moneda (COP) para que la comparación sea real, no una entre dólares y pesos.</span>
       <div class="comparison-grid">
         <div class="comparison-card ai">
           <span class="label">Asistente IA · costo mensual</span>
           <span class="value" id="compare-ai-cost">—</span>
+          <span class="sub" id="compare-ai-usd-sub">—</span>
         </div>
         <div class="comparison-card human">
           <span class="label">Persona · costo mensual estimado</span>
@@ -284,10 +303,13 @@
         estimación orientativa, no una cifra exacta. Se calcula a partir de un
         salario mínimo colombiano aproximado más prestaciones (valores de
         referencia, no oficiales) y un tiempo promedio ilustrativo de atención
-        por conversación humana. El objetivo es mostrar visualmente la diferencia
-        de escala de costo entre ambas opciones, no hacer una afirmación
-        financiera precisa. Ajusta estos supuestos a tu propia realidad antes de
-        tomar decisiones.
+        por conversación humana. El equivalente en COP del costo del asistente
+        IA usa una tasa de cambio de referencia fija (constante
+        <code>USD_TO_COP</code> en el código), no la tasa de mercado en tiempo
+        real — actualízala si necesitas precisión. El objetivo es mostrar
+        visualmente la diferencia de escala de costo entre ambas opciones, no
+        hacer una afirmación financiera precisa. Ajusta estos supuestos a tu
+        propia realidad antes de tomar decisiones.
       </p>
     </section>
 
@@ -311,6 +333,17 @@
     const BLENDED_PRICE_PER_MILLION_TOKENS =
       0.7 * PRICE_PER_MILLION_INPUT_TOKENS + 0.3 * PRICE_PER_MILLION_OUTPUT_TOKENS;
 
+    // Tasa de referencia USD -> COP, AJUSTABLE. Anthropic factura en USD; esta
+    // constante solo existe para (a) mostrarle al dueno de la pyme un equivalente
+    // en pesos y (b) poder comparar el costo del asistente IA con el costo de una
+    // persona (que esta en COP) usando la MISMA moneda — comparar un numero en USD
+    // contra uno en COP sin convertir exagera la diferencia varios ordenes de
+    // magnitud, que es exactamente el bug que esta constante corrige. NO es una
+    // tasa de cambio oficial ni en tiempo real: es un valor de referencia razonable
+    // al momento de escribir esto. Actualizala contra la TRM del Banco de la
+    // Republica (o la fuente que uses) si necesitas precision.
+    const USD_TO_COP = 4100;
+
     // Valores de referencia ilustrativos para la comparacion con una persona, NO
     // cifras oficiales. Ajustar al salario minimo y prestaciones vigentes en Colombia.
     const SALARIO_MINIMO_MENSUAL_COP = 1300000;
@@ -327,29 +360,31 @@
     const tokensInput = document.getElementById("tokens-per-conversation");
     const tokensValueLabel = document.getElementById("tokens-per-conversation-value");
 
-    const costDayEl = document.getElementById("cost-day");
-    const costMonthEl = document.getElementById("cost-month");
-    const costYearEl = document.getElementById("cost-year");
+    const costDayUsdEl = document.getElementById("cost-day-usd");
+    const costDayCopEl = document.getElementById("cost-day-cop");
+    const costMonthUsdEl = document.getElementById("cost-month-usd");
+    const costMonthCopEl = document.getElementById("cost-month-cop");
+    const costYearUsdEl = document.getElementById("cost-year-usd");
+    const costYearCopEl = document.getElementById("cost-year-cop");
     const compareAiEl = document.getElementById("compare-ai-cost");
+    const compareAiUsdSubEl = document.getElementById("compare-ai-usd-sub");
     const compareHumanEl = document.getElementById("compare-human-cost");
     const compareHumanHoursEl = document.getElementById("compare-human-hours");
 
+    // "US$" y el sufijo " COP" evitan que ambas monedas se lean como si fueran
+    // la misma: los dos simbolos "$" nativos de en-US y es-CO son identicos a
+    // simple vista, que fue justamente la fuente de la confusion original.
     function formatUsd(value) {
-      return value.toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
+      const number = value.toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
+      return `US$ ${number}`;
     }
 
     function formatCop(value) {
-      return value.toLocaleString("es-CO", {
-        style: "currency",
-        currency: "COP",
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      });
+      const number = Math.round(value).toLocaleString("es-CO");
+      return `$ ${number} COP`;
     }
 
     function recalculate() {
@@ -362,10 +397,22 @@
       const costPerMonthUsd = costPerDayUsd * 30;
       const costPerYearUsd = costPerDayUsd * 365;
 
-      costDayEl.textContent = formatUsd(costPerDayUsd);
-      costMonthEl.textContent = formatUsd(costPerMonthUsd);
-      costYearEl.textContent = formatUsd(costPerYearUsd);
-      compareAiEl.textContent = formatUsd(costPerMonthUsd);
+      const costPerDayCop = costPerDayUsd * USD_TO_COP;
+      const costPerMonthCop = costPerMonthUsd * USD_TO_COP;
+      const costPerYearCop = costPerYearUsd * USD_TO_COP;
+
+      costDayUsdEl.textContent = formatUsd(costPerDayUsd);
+      costDayCopEl.textContent = `≈ ${formatCop(costPerDayCop)}`;
+      costMonthUsdEl.textContent = formatUsd(costPerMonthUsd);
+      costMonthCopEl.textContent = `≈ ${formatCop(costPerMonthCop)}`;
+      costYearUsdEl.textContent = formatUsd(costPerYearUsd);
+      costYearCopEl.textContent = `≈ ${formatCop(costPerYearCop)}`;
+
+      // La comparacion con el costo de una persona SIEMPRE va en COP: comparar
+      // el numero en USD que factura Anthropic contra el numero en COP del
+      // salario -sin convertir- infla la diferencia varios ordenes de magnitud.
+      compareAiEl.textContent = formatCop(costPerMonthCop);
+      compareAiUsdSubEl.textContent = `Equivale a ${formatUsd(costPerMonthUsd)} — así lo factura Anthropic realmente`;
 
       const minutosPorDia = conversationsPerDay * MINUTOS_ATENCION_HUMANA_POR_CONVERSACION;
       const horasPorDia = minutosPorDia / 60;
