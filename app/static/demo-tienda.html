@@ -1,0 +1,376 @@
+<!--
+  Sitio DEMO de un cliente ficticio de AURA: la ferreteria "El Tornillo Feliz".
+  Objetivo de esta pagina: mostrar que el widget se integra con UNA linea de
+  codigo al final del <body>, sobre el sitio real de una pyme -- no es una
+  pagina de pruebas del propio AURA. El CSS de aqui es deliberadamente propio
+  del "sitio anfitrion" (paleta, tipografia, layout) para demostrar que el
+  widget no lo deforma: todo el markup y estilos del widget viven en un
+  Shadow DOM aparte (ver app/static/widget.js).
+-->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Tornillo Feliz · Ferretería y suministros para el hogar</title>
+  <style>
+    :root {
+      --wood: #7c2d12;
+      --wood-dark: #5c2109;
+      --amber: #f59e0b;
+      --cream: #fffbeb;
+      --ink: #292524;
+      --ink-muted: #78716c;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background: var(--cream);
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .site-header {
+      background: var(--wood);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .site-header-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 22px;
+      font-weight: bold;
+      text-decoration: none;
+      color: white;
+    }
+
+    .logo-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--amber);
+      color: var(--wood-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .site-nav {
+      display: flex;
+      gap: 22px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 15px;
+    }
+
+    .site-nav a {
+      text-decoration: none;
+      opacity: 0.9;
+      transition: opacity 0.15s ease;
+    }
+
+    .site-nav a:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, var(--wood) 0%, var(--wood-dark) 100%);
+      color: white;
+      padding: 64px 24px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: 38px;
+      margin: 0 0 12px;
+    }
+
+    .hero p {
+      font-size: 17px;
+      max-width: 560px;
+      margin: 0 auto 26px;
+      opacity: 0.92;
+    }
+
+    .btn-cta {
+      display: inline-block;
+      background: var(--amber);
+      color: var(--wood-dark);
+      font-weight: bold;
+      padding: 12px 28px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 16px;
+    }
+
+    .btn-cta:hover {
+      background: #fbbf24;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 56px 24px;
+    }
+
+    section + section {
+      margin-top: 56px;
+    }
+
+    .section-title {
+      font-size: 26px;
+      margin: 0 0 8px;
+      color: var(--wood-dark);
+    }
+
+    .section-subtitle {
+      color: var(--ink-muted);
+      margin: 0 0 28px;
+      font-size: 15px;
+    }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .product-card {
+      background: white;
+      border: 1px solid #e7e0d4;
+      border-radius: 6px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .product-icon {
+      font-size: 34px;
+    }
+
+    .product-card h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .product-card p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--ink-muted);
+    }
+
+    .product-price {
+      margin-top: auto;
+      font-size: 18px;
+      font-weight: bold;
+      color: var(--wood);
+    }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 32px;
+      align-items: center;
+    }
+
+    .about-grid p {
+      color: var(--ink-muted);
+      font-size: 15px;
+    }
+
+    .info-card {
+      background: white;
+      border: 1px solid #e7e0d4;
+      border-radius: 6px;
+      padding: 20px;
+    }
+
+    .info-card dt {
+      font-weight: bold;
+      color: var(--wood-dark);
+      margin-top: 12px;
+    }
+
+    .info-card dt:first-child {
+      margin-top: 0;
+    }
+
+    .info-card dd {
+      margin: 2px 0 0;
+      color: var(--ink-muted);
+      font-size: 14px;
+    }
+
+    .site-footer {
+      background: var(--wood-dark);
+      color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      padding: 24px;
+      font-size: 13px;
+      margin-top: 64px;
+    }
+
+    @media (max-width: 700px) {
+      .about-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="logo" href="#inicio">
+        <span class="logo-mark">🔧</span>
+        El Tornillo Feliz
+      </a>
+      <nav>
+        <ul class="site-nav">
+          <li><a href="#inicio">Inicio</a></li>
+          <li><a href="#productos">Productos</a></li>
+          <li><a href="#nosotros">Nosotros</a></li>
+          <li><a href="#contacto">Contacto</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="inicio">
+    <h1>Todo para tu proyecto, bajo un mismo techo</h1>
+    <p>
+      Herramientas, materiales de construcción y suministros para el hogar,
+      con la asesoría de gente que sabe de ferretería desde hace más de 20 años.
+    </p>
+    <a class="btn-cta" href="#productos">Ver productos destacados</a>
+  </section>
+
+  <main>
+    <section id="productos">
+      <h2 class="section-title">Productos destacados</h2>
+      <p class="section-subtitle">Una muestra de nuestro catálogo — disponibilidad sujeta a inventario en tienda.</p>
+      <div class="product-grid">
+        <article class="product-card">
+          <span class="product-icon">🔩</span>
+          <h3>Taladro percutor 650W</h3>
+          <p>Incluye maletín y set de brocas para concreto y metal.</p>
+          <span class="product-price">$189.900</span>
+        </article>
+        <article class="product-card">
+          <span class="product-icon">🔨</span>
+          <h3>Martillo de uña 16oz</h3>
+          <p>Mango de fibra de vidrio antideslizante.</p>
+          <span class="product-price">$38.500</span>
+        </article>
+        <article class="product-card">
+          <span class="product-icon">🧰</span>
+          <h3>Set de destornilladores x12</h3>
+          <p>Puntas Phillips y planas, estuche organizador incluido.</p>
+          <span class="product-price">$54.900</span>
+        </article>
+        <article class="product-card">
+          <span class="product-icon">🪜</span>
+          <h3>Escalera de aluminio 6 pasos</h3>
+          <p>Capacidad de carga 120kg, plegable.</p>
+          <span class="product-price">$215.000</span>
+        </article>
+        <article class="product-card">
+          <span class="product-icon">🎨</span>
+          <h3>Pintura vinilo tipo 1 - Galón</h3>
+          <p>Interior/exterior, amplia gama de colores a base.</p>
+          <span class="product-price">$92.300</span>
+        </article>
+        <article class="product-card">
+          <span class="product-icon">🔒</span>
+          <h3>Cerradura de perilla</h3>
+          <p>Incluye 3 llaves y kit de instalación.</p>
+          <span class="product-price">$47.800</span>
+        </article>
+      </div>
+    </section>
+
+    <section id="nosotros">
+      <div class="about-grid">
+        <div>
+          <h2 class="section-title">Sobre nosotros</h2>
+          <p>
+            El Tornillo Feliz nació como un local de barrio y hoy atendemos a
+            cientos de clientes al mes, desde maestros de obra hasta quienes
+            arreglan algo en casa por primera vez. Nuestro equipo conoce cada
+            producto de la tienda y siempre está listo para recomendar la
+            herramienta correcta para cada trabajo.
+          </p>
+          <p>
+            Si tienes dudas sobre un producto, domicilios o garantías, escríbenos
+            por el chat en la esquina de esta página — respondemos al instante.
+          </p>
+        </div>
+        <div class="info-card" id="contacto">
+          <dl>
+            <dt>Dirección</dt>
+            <dd>Cra. 45 #12-30, Barrio Restrepo, Bogotá</dd>
+            <dt>Horario</dt>
+            <dd>Lunes a sábado, 8:00 a.m. – 6:00 p.m.</dd>
+            <dt>Teléfono</dt>
+            <dd>(601) 555-0199</dd>
+            <dt>Domicilios</dt>
+            <dd>Cubrimos toda la ciudad, tiempo estimado según zona</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © 2026 El Tornillo Feliz. Todos los derechos reservados. Sitio de demostración.
+  </footer>
+
+  <!--
+    Integracion del widget de AURA: una sola linea. data-business-id identifica
+    al negocio, data-api apunta al servidor de AURA (aqui, el mismo host local
+    para la demo), data-business-name es opcional y personaliza el saludo/titulo.
+    Todo lo que renderiza -- burbuja y panel de chat -- vive en un Shadow DOM
+    propio: el CSS de esta pagina (fuente serif, paleta madera/ambar, layout)
+    no lo toca, y el widget tampoco altera nada de lo que ya ves arriba.
+  -->
+  <script
+    src="http://localhost:8000/static/widget.js"
+    data-business-id="tornillo-feliz"
+    data-business-name="El Tornillo Feliz"
+    data-api="http://localhost:8000"
+  ></script>
+</body>
+</html>

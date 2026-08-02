@@ -21,6 +21,14 @@ class Settings:
     claude_model: str = os.getenv("CLAUDE_MODEL") or DEFAULT_CLAUDE_MODEL
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_key: str = os.getenv("SUPABASE_KEY", "")
+    # CORS: dominios permitidos para incrustar el widget (app/static/widget.js)
+    # en sitios de clientes. Lista separada por comas en ALLOWED_ORIGINS.
+    # Fallback a "*" SOLO si la variable no esta definida (comodo para probar
+    # el widget en local) -- en un despliegue real esto debe restringirse a
+    # los dominios reales de los clientes que incrustan el widget.
+    allowed_origins: list[str] = [
+        origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()
+    ] or ["*"]
 
 
 settings = Settings()

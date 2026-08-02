@@ -82,6 +82,45 @@ También puedes correr `python scripts/test_chat.py` con el servidor levantado p
 ver una conversación completa de extremo a extremo (catálogo, políticas y
 escalamiento) contra `POST /chat`.
 
+## Integración en tu sitio web
+
+Cualquier pyme puede incrustar el asistente en su sitio pegando una sola línea
+antes de `</body>`:
+
+```html
+<script
+  src="https://tu-dominio-aura.com/static/widget.js"
+  data-business-id="tu-negocio"
+  data-api="https://tu-dominio-aura.com"
+  data-business-name="Tu Negocio"
+></script>
+```
+
+Esto agrega una burbuja de chat flotante en la esquina inferior derecha. Todo
+el markup y el CSS del widget viven dentro de un **Shadow DOM** propio
+(`element.attachShadow`), así que el CSS del sitio anfitrión no lo deforma y
+el widget tampoco interfiere con el resto de la página.
+
+Data-attributes disponibles en el `<script>`:
+
+| Atributo | Requerido | Descripción |
+| --- | --- | --- |
+| `data-api` | Sí | URL base del servidor de AURA (sin `/` final) al que el widget llama para `/chat` y el polling de mensajes. |
+| `data-business-id` | No | Identificador del negocio; se usa para separar en `localStorage` la conversación de este widget de otras que corran en el mismo navegador. Por defecto `"default"`. |
+| `data-business-name` | No | Nombre mostrado en el encabezado del panel y en el saludo inicial. Por defecto un saludo genérico. |
+
+Puedes ver la integración funcionando en `GET /demo`: un sitio de ejemplo de
+"El Tornillo Feliz" (header, hero, catálogo, contacto) con el widget embebido
+al final del `<body>`, con una hoja de estilos propia deliberadamente distinta
+a la del widget para demostrar el aislamiento del Shadow DOM.
+
+Para que un dominio distinto al de AURA pueda llamar a la API desde el
+navegador, el servidor habilita CORS (`app/main.py`, `CORSMiddleware`) leyendo
+los orígenes permitidos de la variable de entorno `ALLOWED_ORIGINS` (lista
+separada por comas). Si no se define, cae a `"*"` — cómodo para probar en
+local, pero en producción debe restringirse a los dominios reales de los
+clientes que incrustan el widget.
+
 ## Estructura del proyecto
 
 ```
@@ -89,7 +128,8 @@ app/
   api/             # endpoints HTTP (routers): health, chat, admin
   core/            # configuración y lógica de dominio (agente, tools, pricing)
   infrastructure/  # integraciones externas (Supabase, Anthropic)
-  static/          # frontend plano: chat (index.html) y panel admin (admin.html)
+  static/          # frontend plano: chat (index.html), panel admin (admin.html),
+                   # widget embebible (widget.js) y sitio demo (demo-tienda.html)
   main.py          # entrypoint de FastAPI
 db/
   migrations/      # SQL de migraciones, versionado por número
