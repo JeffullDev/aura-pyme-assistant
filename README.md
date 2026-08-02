@@ -8,10 +8,11 @@ de cada conversación.
 
 Negocio de ejemplo (ficticio, sin datos reales): **El Tornillo Feliz**, una ferretería.
 
-Este primer entregable cubre solo el **backend base**: estructura del proyecto,
-modelo de datos, seed de datos de ejemplo y un endpoint `/health`. La lógica del
-agente (tool use con Claude) y el endpoint `/chat` llegan en el siguiente prompt.
-El frontend no está incluido en este alcance.
+El proyecto incluye: el motor del agente (tool use nativo con Claude) detrás de
+`POST /chat`, un frontend de chat tipo widget (`/`), un panel de administración
+de solo lectura con trazabilidad completa de cada conversación y métricas de
+consumo de tokens/costo (`/admin`), y una calculadora de costo standalone para
+dueños de PyME (`docs/artifact_calculadora_roi.html`, sin backend, 100% local).
 
 ## Stack
 
@@ -46,10 +47,12 @@ Completa en `.env`:
 - `SUPABASE_URL`: URL de tu proyecto Supabase
 - `SUPABASE_KEY`: service role key o anon key de tu proyecto Supabase
 
-### 4. Ejecutar la migración
+### 4. Ejecutar las migraciones
 
 Copia el contenido de `db/migrations/001_init.sql` y ejecútalo en el **SQL Editor**
-de tu proyecto Supabase (o usa la CLI de Supabase si la tienes configurada).
+de tu proyecto Supabase (o usa la CLI de Supabase si la tienes configurada). Luego
+haz lo mismo con `db/migrations/002_token_usage.sql` — son secuenciales, corre
+ambas en orden antes de seguir.
 
 ### 5. Cargar datos de ejemplo (seed)
 
@@ -57,7 +60,9 @@ de tu proyecto Supabase (o usa la CLI de Supabase si la tienes configurada).
 python scripts/seed.py
 ```
 
-Esto crea el negocio "El Tornillo Feliz", su catálogo y sus políticas.
+Esto crea el negocio "El Tornillo Feliz", su catálogo y sus políticas. El script
+es idempotente: si el business ya existe (lo detecta por nombre), no vuelve a
+insertar nada, así que puedes correrlo varias veces sin duplicar datos.
 
 ### 6. Levantar el servidor
 
@@ -66,19 +71,30 @@ uvicorn app.main:app --reload
 ```
 
 Verifica que todo esté conectado en [http://localhost:8000/health](http://localhost:8000/health).
+El chat queda disponible en [http://localhost:8000/](http://localhost:8000/) y el
+panel de administración en [http://localhost:8000/admin](http://localhost:8000/admin).
+También puedes correr `python scripts/test_chat.py` con el servidor levantado para
+ver una conversación completa de extremo a extremo (catálogo, políticas y
+escalamiento) contra `POST /chat`.
 
 ## Estructura del proyecto
 
 ```
 app/
-  api/             # endpoints HTTP (routers)
-  core/            # configuración y lógica de dominio
+  api/             # endpoints HTTP (routers): health, chat, admin
+  core/            # configuración y lógica de dominio (agente, tools, pricing)
   infrastructure/  # integraciones externas (Supabase, Anthropic)
+  static/          # frontend plano: chat (index.html) y panel admin (admin.html)
   main.py          # entrypoint de FastAPI
 db/
   migrations/      # SQL de migraciones, versionado por número
+docs/
+  qa_report.md                    # reporte de QA ejecutado contra el sistema real
+  security_audit.md               # auditoría de seguridad ejecutada contra el sistema real
+  artifact_calculadora_roi.html   # calculadora de costo standalone (sin backend)
 scripts/
-  seed.py          # carga de datos de ejemplo
+  seed.py          # carga de datos de ejemplo (idempotente)
+  test_chat.py     # prueba de extremo a extremo contra POST /chat
 ```
 
 ## Razonamiento de diseño
