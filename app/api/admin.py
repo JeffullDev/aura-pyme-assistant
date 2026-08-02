@@ -22,3 +22,9 @@ def session_messages(session_id: str) -> list[dict]:
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
 
     return repository.get_messages(session_id)
+
+
+@router.get("/stats")
+def stats() -> dict:
+    business_id = repository.get_business()["id"]
+    return repository.get_business_stats(business_id)

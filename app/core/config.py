@@ -6,6 +6,13 @@ load_dotenv()
 
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5"
 
+# Precios de referencia por millon de tokens (USD). Son valores APROXIMADOS basados
+# en el pricing publico conocido de Claude Sonnet ($3/M input, $15/M output) al
+# momento de escribir esto — NO son autoritativos. Antes de usarlos para facturacion
+# real, verificar y actualizar contra el pricing vigente en https://www.anthropic.com/pricing
+PRICE_PER_MILLION_INPUT_TOKENS = 3.0
+PRICE_PER_MILLION_OUTPUT_TOKENS = 15.0
+
 
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")

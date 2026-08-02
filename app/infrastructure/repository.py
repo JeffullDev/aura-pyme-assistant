@@ -180,9 +180,85 @@ def list_sessions(business_id: str, status: str | None = None) -> list[dict[str,
     for row in rows:
         counts[row["session_id"]] = counts.get(row["session_id"], 0) + 1
 
+    token_totals = _token_totals_by_session(session_ids)
+
     for session in sessions:
         session["message_count"] = counts.get(session["id"], 0)
+        totals = token_totals.get(session["id"], {"total_tokens": 0, "estimated_cost": 0.0})
+        session["total_tokens"] = totals["total_tokens"]
+        session["estimated_cost"] = totals["estimated_cost"]
     return sessions
+
+
+def _token_totals_by_session(session_ids: list[str]) -> dict[str, dict[str, Any]]:
+    rows = (
+        get_supabase_client()
+        .table("token_usage")
+        .select("session_id, total_tokens, estimated_cost")
+        .in_("session_id", session_ids)
+        .execute()
+        .data
+    )
+    totals: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = totals.setdefault(row["session_id"], {"total_tokens": 0, "estimated_cost": 0.0})
+        entry["total_tokens"] += row["total_tokens"]
+        entry["estimated_cost"] += row["estimated_cost"]
+    return totals
+
+
+def log_token_usage(
+    session_id: str,
+    input_tokens: int,
+    output_tokens: int,
+    total_tokens: int,
+    estimated_cost: float,
+) -> None:
+    (
+        get_supabase_client()
+        .table("token_usage")
+        .insert(
+            {
+                "session_id": session_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "estimated_cost": estimated_cost,
+            }
+        )
+        .execute()
+    )
+
+
+def get_business_stats(business_id: str) -> dict[str, Any]:
+    sessions = (
+        get_supabase_client()
+        .table("chat_session")
+        .select("id")
+        .eq("business_id", business_id)
+        .execute()
+        .data
+    )
+    total_conversations = len(sessions)
+    if total_conversations == 0:
+        return {
+            "total_conversations": 0,
+            "total_tokens": 0,
+            "total_estimated_cost": 0.0,
+            "avg_tokens_per_conversation": 0.0,
+        }
+
+    session_ids = [session["id"] for session in sessions]
+    token_totals = _token_totals_by_session(session_ids)
+    total_tokens = sum(entry["total_tokens"] for entry in token_totals.values())
+    total_estimated_cost = sum(entry["estimated_cost"] for entry in token_totals.values())
+
+    return {
+        "total_conversations": total_conversations,
+        "total_tokens": total_tokens,
+        "total_estimated_cost": total_estimated_cost,
+        "avg_tokens_per_conversation": total_tokens / total_conversations,
+    }
 
 
 def get_messages(session_id: str) -> list[dict[str, Any]]:

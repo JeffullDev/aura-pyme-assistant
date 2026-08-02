@@ -22,6 +22,25 @@
       <a class="btn-new-conversation" href="/">Ir al chat</a>
     </header>
 
+    <div class="admin-metrics" id="admin-metrics">
+      <div class="metric-card">
+        <span class="metric-label">Total conversaciones</span>
+        <span class="metric-value" id="metric-total-conversations">—</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Tokens totales</span>
+        <span class="metric-value" id="metric-total-tokens">—</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Costo estimado total</span>
+        <span class="metric-value" id="metric-total-cost">—</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Promedio de tokens / conversación</span>
+        <span class="metric-value" id="metric-avg-tokens">—</span>
+      </div>
+    </div>
+
     <div class="admin-filters" id="status-filters">
       <button class="filter-btn active" data-status="">Todas</button>
       <button class="filter-btn" data-status="active">Activas</button>

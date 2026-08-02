@@ -2,7 +2,11 @@ import json
 import logging
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import (
+    PRICE_PER_MILLION_INPUT_TOKENS,
+    PRICE_PER_MILLION_OUTPUT_TOKENS,
+    settings,
+)
 from app.core.tools import TOOL_DEFINITIONS, execute_tool
 from app.infrastructure import repository
 from app.infrastructure.claude_client import get_claude_client
@@ -53,9 +57,14 @@ def _run_tool_loop(
     messages: list[dict[str, Any]],
     business_id: str,
     session_id: str,
-) -> str | None:
-    """Devuelve la respuesta final, o None si se agotó el límite de iteraciones."""
+) -> tuple[str | None, int, int]:
+    """Devuelve (respuesta final o None si se agoto el limite de iteraciones,
+    input_tokens acumulados, output_tokens acumulados) sumando el usage de TODAS
+    las llamadas a Claude hechas en este turno (la inicial mas cada iteracion por
+    tool use)."""
     client = get_claude_client()
+    total_input_tokens = 0
+    total_output_tokens = 0
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
@@ -65,9 +74,11 @@ def _run_tool_loop(
             tools=TOOL_DEFINITIONS,
             messages=messages,
         )
+        total_input_tokens += response.usage.input_tokens
+        total_output_tokens += response.usage.output_tokens
 
         if response.stop_reason != "tool_use":
-            return _text_from(response)
+            return _text_from(response), total_input_tokens, total_output_tokens
 
         # Dentro del loop sí se usan bloques tool_use/tool_result: la API los exige
         # para cerrar el ciclo. Lo que no se replica es el historial de turnos previos.
@@ -96,7 +107,7 @@ def _run_tool_loop(
 
         messages.append({"role": "user", "content": tool_results})
 
-    return None
+    return None, total_input_tokens, total_output_tokens
 
 
 def handle_message(
@@ -133,7 +144,7 @@ def handle_message(
     ]
 
     try:
-        reply = _run_tool_loop(
+        reply, input_tokens, output_tokens = _run_tool_loop(
             _build_system_prompt(business["tone_prompt"]),
             messages,
             business_id,
@@ -158,6 +169,15 @@ def handle_message(
         )
         repository.escalate_session(session_id)
         reply = LOOP_EXHAUSTED_REPLY
+
+    total_tokens = input_tokens + output_tokens
+    estimated_cost = (
+        input_tokens / 1_000_000 * PRICE_PER_MILLION_INPUT_TOKENS
+        + output_tokens / 1_000_000 * PRICE_PER_MILLION_OUTPUT_TOKENS
+    )
+    repository.log_token_usage(
+        session_id, input_tokens, output_tokens, total_tokens, estimated_cost
+    )
 
     repository.log_message(session_id, role="assistant", content=reply)
 

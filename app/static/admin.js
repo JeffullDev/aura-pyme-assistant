@@ -26,6 +26,14 @@ function formatDate(isoString) {
   });
 }
 
+function formatCost(value) {
+  return `$${(value ?? 0).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
+function formatTokens(value) {
+  return (value ?? 0).toLocaleString("es-CO");
+}
+
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -60,6 +68,7 @@ function renderSessions(sessions) {
       <div class="session-row-meta">
         <span>${formatDate(session.started_at)}</span>
         <span>${session.message_count} mensaje${session.message_count === 1 ? "" : "s"}</span>
+        <span class="session-cost">${formatCost(session.estimated_cost)}</span>
       </div>
     `;
 
@@ -129,6 +138,20 @@ function buildJsonBlock(label, value) {
   return wrapper;
 }
 
+async function loadStats() {
+  try {
+    const stats = await fetchJson("/admin/stats");
+    document.getElementById("metric-total-conversations").textContent = formatTokens(stats.total_conversations);
+    document.getElementById("metric-total-tokens").textContent = formatTokens(stats.total_tokens);
+    document.getElementById("metric-total-cost").textContent = formatCost(stats.total_estimated_cost);
+    document.getElementById("metric-avg-tokens").textContent = formatTokens(Math.round(stats.avg_tokens_per_conversation));
+  } catch (err) {
+    document.querySelectorAll("#admin-metrics .metric-value").forEach((el) => {
+      el.textContent = "—";
+    });
+  }
+}
+
 async function loadSessions() {
   sessionsListEl.innerHTML = '<p class="admin-empty">Cargando sesiones...</p>';
   try {
@@ -165,4 +188,5 @@ filtersEl.addEventListener("click", (event) => {
   loadSessions();
 });
 
+loadStats();
 loadSessions();
