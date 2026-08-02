@@ -67,6 +67,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 
+def _stock_status(stock: int) -> str:
+    if stock == 0:
+        return "Agotado"
+    if stock <= 4:
+        return "Poco stock"
+    if stock <= 9:
+        return "Hay stock, pocas unidades"
+    return "Hay stock"
+
+
+def _sanitize_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+    """El numero crudo de stock es informacion interna: nunca debe llegar a Claude."""
+    return {
+        "name": item.get("name"),
+        "description": item.get("description"),
+        "price": item.get("price"),
+        "category": item.get("category"),
+        "stock_status": _stock_status(item.get("stock") or 0),
+    }
+
+
 def execute_tool(
     name: str,
     tool_input: dict[str, Any],
@@ -79,7 +100,8 @@ def execute_tool(
             query=tool_input.get("query", ""),
             category=tool_input.get("category"),
         )
-        return {"results": results, "count": len(results)}
+        sanitized = [_sanitize_catalog_item(item) for item in results]
+        return {"results": sanitized, "count": len(sanitized)}
 
     if name == "get_policy":
         policy = repository.get_policy(business_id, tool_input.get("topic", ""))

@@ -38,10 +38,21 @@ function getStoredMessages() {
   }
 }
 
+// Red de seguridad: el system prompt le pide a Claude texto plano sin Markdown,
+// pero por si se le escapa algun simbolo, lo limpiamos antes de mostrarlo.
+function sanitizeAssistantText(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/(^|\n)\s*[-*]\s+/g, "$1")
+    .replace(/(^|\n)\s*\d+\.\s+/g, "$1")
+    .replace(/(^|\n)#{1,6}\s*/g, "$1");
+}
+
 function renderMessage(role, text) {
+  const displayText = role === "assistant" ? sanitizeAssistantText(text) : text;
   const bubble = document.createElement("div");
   bubble.className = `message ${role}`;
-  bubble.textContent = text;
+  bubble.textContent = displayText;
   messagesEl.appendChild(bubble);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return bubble;
