@@ -51,18 +51,23 @@ Completa en `.env`:
 
 Copia el contenido de `db/migrations/001_init.sql` y ejecútalo en el **SQL Editor**
 de tu proyecto Supabase (o usa la CLI de Supabase si la tienes configurada). Luego
-haz lo mismo con `db/migrations/002_token_usage.sql` — son secuenciales, corre
-ambas en orden antes de seguir.
+haz lo mismo, en orden, con `002_token_usage.sql`, `003_business_config.sql`,
+`004_knowledge.sql` y `005_orders.sql` — son secuenciales, corre las cinco antes
+de seguir.
 
 ### 5. Cargar datos de ejemplo (seed)
 
 ```bash
 python scripts/seed.py
+python scripts/load_knowledge.py
 ```
 
-Esto crea el negocio "El Tornillo Feliz", su catálogo y sus políticas. El script
-es idempotente: si el business ya existe (lo detecta por nombre), no vuelve a
-insertar nada, así que puedes correrlo varias veces sin duplicar datos.
+`seed.py` crea el negocio "El Tornillo Feliz" (incluida su config estructurada de
+horario/domicilios), su catálogo y sus políticas. `load_knowledge.py` carga
+`db/knowledge/tornillo_feliz.md` (guías, consejos, historia del negocio) en la
+tabla `knowledge_base`, partiendo el markdown por encabezados `##`. Ambos scripts
+son idempotentes: si ya existen datos para el business, no vuelven a insertar
+nada, así que puedes correrlos varias veces sin duplicar datos.
 
 ### 6. Levantar el servidor
 
@@ -88,13 +93,15 @@ app/
   main.py          # entrypoint de FastAPI
 db/
   migrations/      # SQL de migraciones, versionado por número
+  knowledge/       # markdown fuente de la base de conocimiento (guías, consejos)
 docs/
   qa_report.md                    # reporte de QA ejecutado contra el sistema real
   security_audit.md               # auditoría de seguridad ejecutada contra el sistema real
   artifact_calculadora_roi.html   # calculadora de costo standalone (sin backend)
 scripts/
-  seed.py          # carga de datos de ejemplo (idempotente)
-  test_chat.py     # prueba de extremo a extremo contra POST /chat
+  seed.py            # carga de datos de ejemplo (idempotente)
+  load_knowledge.py  # carga db/knowledge/*.md en knowledge_base (idempotente)
+  test_chat.py       # prueba de extremo a extremo contra POST /chat
 ```
 
 ## Razonamiento de diseño
@@ -116,15 +123,30 @@ sin aportar valor proporcional en 48h. Tool use nativo del SDK de Anthropic da
 control directo sobre qué herramientas ve el modelo y cómo se ejecutan, que es
 justo lo que se evalúa en el reto (uso técnico de Claude).
 
-**Modelo de datos — por qué estas 5 tablas**:
+**Modelo de datos — por qué estas tablas**:
 - `business` centraliza la identidad del negocio y, clave para el reto, el
   `tone_prompt`: la instrucción de tono de marca que el agente inyecta en su
   system prompt. Esto hace que el mismo motor de agente sirva a distintos
-  negocios sin tocar código.
-- `catalog_item` y `policy` son la base de conocimiento que el agente consulta
-  vía tool use para responder con hechos del negocio en vez de alucinar.
-  `policy.topic` está acotado a un set fijo (horario/domicilios/garantía/pago)
-  porque son las categorías de consulta más comunes en atención al cliente PyME.
+  negocios sin tocar código. También guarda la config estructurada del negocio
+  (`opens_at`, `closes_at`, `avg_delivery_minutes`, `shipping_cost`,
+  `free_shipping_threshold`): son la fuente de verdad para cálculos, mientras
+  que el texto de `policy` existe solo para responder conversacionalmente y
+  debe mantenerse coherente con esos valores.
+- `catalog_item` y `policy` son la base de conocimiento estructurada que el
+  agente consulta vía tool use para responder con hechos del negocio en vez de
+  alucinar. `policy.topic` está acotado a un set fijo (horario/domicilios/
+  garantía/pago) porque son las categorías de consulta más comunes en atención
+  al cliente PyME.
+- `knowledge_base` complementa a las dos anteriores con contenido narrativo más
+  largo (guías de uso, consejos, historia del negocio) que no encaja en datos
+  estructurados de precio/stock ni en un topic fijo de política. Se consulta
+  vía la tool `search_knowledge` con el mismo enfoque de búsqueda por palabra
+  clave que `search_catalog`.
+- `orders` y `order_items` registran los pedidos que el agente toma por chat vía
+  la tool `create_order`. `order_items` guarda un snapshot de `product_name` y
+  `unit_price` al momento de la compra (no solo el FK a `catalog_item`): si el
+  precio del catálogo cambia después, el pedido histórico conserva el precio
+  real que se cobró.
 - `chat_session` y `message_log` separan la sesión (quién, cuándo, en qué estado)
   del log de mensajes (qué se dijo). `message_log` guarda `tool_name`,
   `tool_input` y `tool_output` además de `content` para dejar trazabilidad

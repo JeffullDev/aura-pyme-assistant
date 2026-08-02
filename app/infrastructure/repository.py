@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
@@ -74,6 +75,33 @@ def search_catalog(
         request = request.ilike("category", f"%{_sanitize_filter_term(category)}%")
 
     return request.limit(limit).execute().data
+
+
+def search_knowledge_base(
+    business_id: str,
+    query: str,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Busqueda ILIKE sobre title/content, mismo enfoque que search_catalog: se
+    prefiere recall sobre precision para contenido narrativo (guias, consejos)."""
+    terms = _search_terms(query)
+    if not terms:
+        return []
+
+    conditions = ",".join(
+        f"{field}.ilike.%{term}%" for term in terms for field in ("title", "content")
+    )
+
+    return (
+        get_supabase_client()
+        .table("knowledge_base")
+        .select("title, content")
+        .eq("business_id", business_id)
+        .or_(conditions)
+        .limit(limit)
+        .execute()
+        .data
+    )
 
 
 def get_policy(business_id: str, topic: str) -> dict[str, Any] | None:
@@ -294,3 +322,119 @@ def get_history(session_id: str) -> list[dict[str, str]]:
         .execute()
     )
     return [row for row in result.data if row.get("content")]
+
+
+def find_catalog_item_for_order(business_id: str, product_name: str) -> dict[str, Any] | None:
+    """Mismo enfoque ILIKE que search_catalog, pero solo sobre `name` (no
+    description) y trayendo `id`/`stock` crudos: create_order necesita el id
+    para el FK de order_items y el stock exacto para validar/descontar."""
+    terms = _search_terms(product_name)
+    if not terms:
+        return None
+
+    conditions = ",".join(f"name.ilike.%{term}%" for term in terms)
+    result = (
+        get_supabase_client()
+        .table("catalog_item")
+        .select("id, name, price, stock, category")
+        .eq("business_id", business_id)
+        .or_(conditions)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def update_catalog_stock(catalog_item_id: str, new_stock: int) -> None:
+    (
+        get_supabase_client()
+        .table("catalog_item")
+        .update({"stock": new_stock})
+        .eq("id", catalog_item_id)
+        .execute()
+    )
+
+
+def insert_order(
+    business_id: str,
+    session_id: str,
+    user_identifier: str,
+    customer_name: str,
+    delivery_address: str,
+    subtotal: float,
+    shipping_cost: float,
+    total: float,
+    estimated_delivery_at: datetime,
+) -> dict[str, Any]:
+    result = (
+        get_supabase_client()
+        .table("orders")
+        .insert(
+            {
+                "business_id": business_id,
+                "session_id": session_id,
+                "user_identifier": user_identifier,
+                "customer_name": customer_name,
+                "delivery_address": delivery_address,
+                "subtotal": subtotal,
+                "shipping_cost": shipping_cost,
+                "total": total,
+                # estimated_delivery_at es `timestamp` (sin zona horaria): se manda
+                # el wall-clock de America/Bogota sin offset. Si se mandara con
+                # offset, Postgres la reinterpretaria en la timezone de la sesion
+                # (UTC) y desfasaria la hora real de entrega.
+                "estimated_delivery_at": estimated_delivery_at.replace(tzinfo=None).isoformat(),
+            }
+        )
+        .execute()
+    )
+    return result.data[0]
+
+
+def insert_order_items(rows: list[dict[str, Any]]) -> None:
+    get_supabase_client().table("order_items").insert(rows).execute()
+
+
+def find_order_by_reference(business_id: str, reference: str) -> dict[str, Any] | None:
+    """El `order_reference` que ve el cliente son los primeros 8 caracteres del
+    UUID. Se trae el set de orders del negocio y se compara en Python: para el
+    volumen de este MVP es mas simple y robusto que castear uuid a texto en el
+    filtro de PostgREST."""
+    orders = (
+        get_supabase_client()
+        .table("orders")
+        .select("*")
+        .eq("business_id", business_id)
+        .execute()
+        .data
+    )
+    reference_lower = reference.strip().lower()
+    for order in orders:
+        if str(order["id"]).lower().startswith(reference_lower):
+            return order
+    return None
+
+
+def get_recent_orders(business_id: str, user_identifier: str, limit: int = 5) -> list[dict[str, Any]]:
+    return (
+        get_supabase_client()
+        .table("orders")
+        .select("*")
+        .eq("business_id", business_id)
+        .eq("user_identifier", user_identifier)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+        .data
+    )
+
+
+def get_order_items(order_id: str) -> list[dict[str, Any]]:
+    return (
+        get_supabase_client()
+        .table("order_items")
+        .select("product_name, quantity, unit_price, subtotal")
+        .eq("order_id", order_id)
+        .execute()
+        .data
+    )
