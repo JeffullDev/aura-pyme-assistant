@@ -155,7 +155,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Marca la conversación para que la atienda un humano. Úsala cuando el "
             "cliente lo pida explícitamente, cuando no puedas resolver su consulta "
             "después de intentarlo con las otras herramientas, o cuando detectes "
-            "frustración clara."
+            "frustración clara. En la MISMA respuesta en la que llamas esta "
+            "herramienta incluye siempre un texto para el cliente avisándole que "
+            "su conversación pasó a un asesor: nunca la llames sin texto."
         ),
         "input_schema": {
             "type": "object",
@@ -171,11 +173,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "close_conversation",
         "description": (
-            "Cierra la conversación cuando el cliente indica que ya no necesita "
-            "nada más (dice 'no gracias', 'eso es todo', 'listo', se despide, etc.). "
-            "Antes de cerrar SIEMPRE debes haberte despedido cordialmente y "
-            "preguntado si necesita algo más; solo cierra cuando el cliente "
-            "confirme que no."
+            "Cierra la conversación cuando el cliente confirma explícitamente que "
+            "ya no necesita nada más, después de que le preguntaste. Ojo: 'está "
+            "bien gracias', 'ok gracias' o 'listo' por sí solos NO son esa "
+            "confirmación (son solo señal de que quedó conforme); solo cierra "
+            "cuando responda que no a tu pregunta de si necesita algo más. En la "
+            "MISMA respuesta en la que llamas esta herramienta incluye siempre un "
+            "texto de despedida formal que agradezca el contacto e invite a "
+            "volver: nunca la llames sin texto ni cierres en seco."
         ),
         "input_schema": {
             "type": "object",
