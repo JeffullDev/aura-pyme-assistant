@@ -110,7 +110,7 @@ python -m venv venv
 curl http://localhost:8000/health   # {"status": "ok", "supabase": "connected"}
 ```
 
-Migraciones: aplicar `db/migrations/001_init.sql` a `009_demanda.sql` en orden
+Migraciones: aplicar `db/migrations/001_init.sql` a `011_ubicacion.sql` en orden
 contra el proyecto de Supabase antes de sembrar datos.
 
 ## Cómo están organizadas las tools del agente
@@ -129,7 +129,7 @@ Las 8 tools actuales, agrupadas por qué resuelven:
 | Tool | Resuelve |
 |---|---|
 | `search_catalog` | precio/disponibilidad/características de productos |
-| `get_policy` | horario, domicilios, garantía, pago (4 temas fijos) |
+| `get_policy` | horario, domicilios, garantía, pago, ubicación (5 temas fijos) |
 | `search_knowledge` | preguntas libres que no encajan arriba (guías, consejos, marca) |
 | `create_order` | registra un pedido — exige confirmación explícita previa del cliente |
 | `check_order_status` | estado y hora estimada de entrega de pedidos propios |

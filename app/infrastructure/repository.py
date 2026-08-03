@@ -522,7 +522,7 @@ def get_voice_of_customer(business_id: str, limit: int = 10) -> dict[str, Any]:
     al agente, leido directamente de message_log (sin heuristicas nuevas, misma
     fuente que _session_categories y get_uncovered_demand). Cuatro vistas:
     - policy_topics: por que tema de politica preguntan mas (horario/domicilios/
-      garantia/pago), ya viene acotado por el enum de la tool.
+      garantia/pago/ubicacion), ya viene acotado por el enum de la tool.
     - catalog_terms / knowledge_terms: que buscan en catalogo y en la base de
       conocimiento, normalizado (lowercased/strip) y agrupado por termino exacto
       -- no es NLP, es lo que el cliente escribio, agrupado literal.

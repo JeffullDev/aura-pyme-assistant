@@ -45,6 +45,7 @@ const POLICY_TOPIC_LABELS = {
   domicilios: "Domicilios",
   garantia: "Garantía",
   pago: "Pago",
+  ubicacion: "Ubicación",
 };
 
 const VIEW_TITLES = {

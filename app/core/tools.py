@@ -32,15 +32,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "get_policy",
         "description": (
             "Obtiene la política oficial del negocio sobre un tema. Úsala SIEMPRE "
-            "antes de responder preguntas sobre horario, domicilios, garantía o "
-            "pago. Nunca inventes esta información."
+            "antes de responder preguntas sobre horario, domicilios, garantía, "
+            "pago o ubicación/dirección del negocio. Nunca inventes esta información."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "topic": {
                     "type": "string",
-                    "enum": ["horario", "domicilios", "garantia", "pago"],
+                    "enum": ["horario", "domicilios", "garantia", "pago", "ubicacion"],
                     "description": "Tema de la política a consultar.",
                 }
             },

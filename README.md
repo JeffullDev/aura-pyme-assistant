@@ -65,7 +65,8 @@ Las herramientas registradas hoy en `app/core/tools.py` (8 en total):
   clave. Obligatoria antes de responder sobre precio, disponibilidad o
   características.
 - **`get_policy`** — trae la política oficial sobre horario, domicilios,
-  garantía o pago (temas fijos, uno de esos cuatro).
+  garantía, pago o ubicación/dirección del local (temas fijos, uno de esos
+  cinco).
 - **`search_knowledge`** — busca en una base de conocimiento libre (guías de
   uso, consejos, historia de la marca) para preguntas que no encajan en
   catálogo ni en las 4 políticas fijas.
@@ -301,11 +302,12 @@ Ya se verificó que funciona desde un clon limpio — estos pasos son exactos.
 2. **Configurar `.env`** (copiar `.env.example`) con las 3 variables
    requeridas: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`.
    `ALLOWED_ORIGINS` y `CLAUDE_MODEL` son opcionales.
-3. **Correr las 9 migraciones, en orden, contra tu proyecto de Supabase**
+3. **Correr las 11 migraciones, en orden, contra tu proyecto de Supabase**
    (copiar y ejecutar cada archivo en el SQL editor de Supabase):
    `001_init.sql`, `002_token_usage.sql`, `003_business_config.sql`,
    `004_knowledge.sql`, `005_orders.sql`, `006_handoff.sql`,
-   `007_margenes.sql`, `008_abandoned_status.sql`, `009_demanda.sql`.
+   `007_margenes.sql`, `008_abandoned_status.sql`, `009_demanda.sql`,
+   `010_cache_metrics.sql`, `011_ubicacion.sql`.
 4. **Sembrar datos de ejemplo:**
    ```
    ./venv/Scripts/python.exe scripts/seed.py
@@ -442,7 +444,7 @@ documenta aquí tal como ocurrió en el repo, no como un incidente separado de
 - Artifact (calculadora de costo): `docs/artifact_calculadora_roi.html`
 - Reporte de QA: `docs/qa_report.md`
 - Reporte de auditoría de seguridad: `docs/security_audit.md`
-- Migraciones: `db/migrations/001_init.sql` a `009_demanda.sql`
+- Migraciones: `db/migrations/001_init.sql` a `011_ubicacion.sql`
 - Script de siembra de datos: `scripts/seed.py` y `scripts/load_knowledge.py`
 
 ## Stack y decisiones técnicas

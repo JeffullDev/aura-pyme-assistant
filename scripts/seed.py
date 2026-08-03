@@ -312,6 +312,15 @@ POLICIES = [
             "Tambien contamos con pago contraentrega para domicilios dentro de la ciudad."
         ),
     },
+    {
+        # Misma direccion ficticia que ya usaba app/static/demo-tienda.html,
+        # para que el chat no contradiga lo que muestra la pagina de demo.
+        "topic": "ubicacion",
+        "content": (
+            "Nuestro local esta en la Cra. 45 #12-30, Barrio Restrepo, Bogota. "
+            "Puedes recoger tu pedido ahi mismo, en el mismo horario de atencion."
+        ),
+    },
 ]
 
 
