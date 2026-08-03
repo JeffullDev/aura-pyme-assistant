@@ -3,6 +3,8 @@ import logging
 from typing import Any
 
 from app.core.config import (
+    CACHE_READ_MULTIPLIER,
+    CACHE_WRITE_MULTIPLIER,
     PRICE_PER_MILLION_INPUT_TOKENS,
     PRICE_PER_MILLION_OUTPUT_TOKENS,
     settings,
@@ -49,8 +51,22 @@ Reglas:
 - Cuando resuelvas la duda del cliente o se concrete una venta, despídete de forma cordial y pregúntale si necesita algo más. Si el cliente confirma que no necesita nada adicional (por ejemplo dice "no gracias", "eso es todo", "listo", o simplemente se despide), llama a close_conversation con un resumen breve del motivo. NUNCA llames close_conversation sin haberte despedido antes y haber preguntado explícitamente si necesita algo más."""
 
 
-def _build_system_prompt(tone_prompt: str) -> str:
-    return f"{BASE_INSTRUCTIONS}\n\n## Tono de marca\n{tone_prompt}"
+def _build_system_prompt(tone_prompt: str) -> list[dict[str, Any]]:
+    """Se manda como lista de bloques (no string plano) para poder poner
+    cache_control en el ULTIMO bloque: el orden de renderizado de la API es
+    tools -> system -> messages, asi que un breakpoint ahi cachea las
+    TOOL_DEFINITIONS y el system prompt juntos en un solo prefijo. Nunca debe
+    interpolarse aqui nada que cambie por sesion/turno (session_id, timestamps,
+    etc.) o se invalida el cache en cada request; tone_prompt es estable
+    (mono-negocio, cacheado via repository.get_business())."""
+    text = f"{BASE_INSTRUCTIONS}\n\n## Tono de marca\n{tone_prompt}"
+    return [
+        {
+            "type": "text",
+            "text": text,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
 
 
 def _text_from(response: Any) -> str:
@@ -60,18 +76,22 @@ def _text_from(response: Any) -> str:
 
 
 def _run_tool_loop(
-    system_prompt: str,
+    system_prompt: list[dict[str, Any]],
     messages: list[dict[str, Any]],
     business_id: str,
     session_id: str,
-) -> tuple[str | None, int, int]:
+) -> tuple[str | None, int, int, int, int]:
     """Devuelve (respuesta final o None si se agoto el limite de iteraciones,
-    input_tokens acumulados, output_tokens acumulados) sumando el usage de TODAS
-    las llamadas a Claude hechas en este turno (la inicial mas cada iteracion por
-    tool use)."""
+    input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens),
+    los ultimos 4 acumulados sumando el usage de TODAS las llamadas a Claude
+    hechas en este turno (la inicial mas cada iteracion por tool use).
+    input_tokens NO incluye los tokens de cache (creation/read): la API los
+    reporta aparte en response.usage, cada uno con su propio precio."""
     client = get_claude_client()
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cache_creation_tokens = 0
+    total_cache_read_tokens = 0
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
@@ -83,9 +103,17 @@ def _run_tool_loop(
         )
         total_input_tokens += response.usage.input_tokens
         total_output_tokens += response.usage.output_tokens
+        total_cache_creation_tokens += response.usage.cache_creation_input_tokens or 0
+        total_cache_read_tokens += response.usage.cache_read_input_tokens or 0
 
         if response.stop_reason != "tool_use":
-            return _text_from(response), total_input_tokens, total_output_tokens
+            return (
+                _text_from(response),
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_creation_tokens,
+                total_cache_read_tokens,
+            )
 
         # Dentro del loop sí se usan bloques tool_use/tool_result: la API los exige
         # para cerrar el ciclo. Lo que no se replica es el historial de turnos previos.
@@ -114,7 +142,7 @@ def _run_tool_loop(
 
         messages.append({"role": "user", "content": tool_results})
 
-    return None, total_input_tokens, total_output_tokens
+    return None, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens
 
 
 def handle_message(
@@ -169,7 +197,7 @@ def handle_message(
     ]
 
     try:
-        reply, input_tokens, output_tokens = _run_tool_loop(
+        reply, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens = _run_tool_loop(
             _build_system_prompt(business["tone_prompt"]),
             messages,
             business_id,
@@ -195,13 +223,23 @@ def handle_message(
         repository.escalate_session(session_id)
         reply = LOOP_EXHAUSTED_REPLY
 
-    total_tokens = input_tokens + output_tokens
+    # total_tokens incluye los de cache (creation + read): son tokens reales
+    # procesados por el modelo, solo que a un precio distinto al input normal.
+    total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
     estimated_cost = (
         input_tokens / 1_000_000 * PRICE_PER_MILLION_INPUT_TOKENS
         + output_tokens / 1_000_000 * PRICE_PER_MILLION_OUTPUT_TOKENS
+        + cache_creation_tokens / 1_000_000 * PRICE_PER_MILLION_INPUT_TOKENS * CACHE_WRITE_MULTIPLIER
+        + cache_read_tokens / 1_000_000 * PRICE_PER_MILLION_INPUT_TOKENS * CACHE_READ_MULTIPLIER
     )
     repository.log_token_usage(
-        session_id, input_tokens, output_tokens, total_tokens, estimated_cost
+        session_id,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        estimated_cost,
+        cache_creation_tokens,
+        cache_read_tokens,
     )
 
     repository.log_message(session_id, role="assistant", content=reply)

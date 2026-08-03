@@ -92,6 +92,7 @@ const kpiConversionEl = document.getElementById("kpi-conversion");
 const kpiAvgTicketEl = document.getElementById("kpi-avg-ticket");
 const kpiTokenCostEl = document.getElementById("kpi-token-cost");
 const kpiCostVsRevenueEl = document.getElementById("kpi-cost-vs-revenue");
+const kpiCacheSavingsEl = document.getElementById("kpi-cache-savings");
 const resumenChartEl = document.getElementById("resumen-chart");
 const resumenRangeSelectorEl = document.getElementById("resumen-range-selector");
 const resumenRatioStatEl = document.getElementById("resumen-ratio-stat");
@@ -576,6 +577,12 @@ async function loadSummary() {
     kpiAvgTicketEl.textContent = formatCOP(stats.avg_ticket);
     kpiTokenCostEl.textContent = formatCopWithUsd(stats.total_estimated_cost);
     kpiCostVsRevenueEl.textContent = `Generó ${formatCOP(stats.revenue_total)} en pedidos — costó ${formatCopWithUsd(stats.total_estimated_cost)} en tokens`;
+    const cacheReadTokens = stats.cache_read_tokens || 0;
+    if (cacheReadTokens > 0) {
+      kpiCacheSavingsEl.textContent = `${formatTokens(cacheReadTokens)} tokens servidos desde cache — ahorró ${formatCopWithUsd(stats.cache_savings_usd)} frente a precio completo`;
+    } else {
+      kpiCacheSavingsEl.textContent = "Sin lecturas de cache todavía";
+    }
     renderConversationsBreakdown(stats);
   } catch (err) {
     document.querySelectorAll("#view-resumen .kpi-value").forEach((el) => {

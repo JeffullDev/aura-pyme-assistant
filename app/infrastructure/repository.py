@@ -3,6 +3,11 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
+from app.core.config import (
+    CACHE_READ_MULTIPLIER,
+    CACHE_WRITE_MULTIPLIER,
+    PRICE_PER_MILLION_INPUT_TOKENS,
+)
 from app.infrastructure.supabase_client import get_supabase_client
 
 HISTORY_ROLES = ("user", "assistant", "agent")
@@ -315,16 +320,29 @@ def _token_totals_by_session(session_ids: list[str]) -> dict[str, dict[str, Any]
     rows = (
         get_supabase_client()
         .table("token_usage")
-        .select("session_id, total_tokens, estimated_cost")
+        .select(
+            "session_id, total_tokens, estimated_cost, "
+            "cache_creation_input_tokens, cache_read_input_tokens"
+        )
         .in_("session_id", session_ids)
         .execute()
         .data
     )
     totals: dict[str, dict[str, Any]] = {}
     for row in rows:
-        entry = totals.setdefault(row["session_id"], {"total_tokens": 0, "estimated_cost": 0.0})
+        entry = totals.setdefault(
+            row["session_id"],
+            {
+                "total_tokens": 0,
+                "estimated_cost": 0.0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        )
         entry["total_tokens"] += row["total_tokens"]
         entry["estimated_cost"] += row["estimated_cost"]
+        entry["cache_creation_input_tokens"] += row.get("cache_creation_input_tokens") or 0
+        entry["cache_read_input_tokens"] += row.get("cache_read_input_tokens") or 0
     return totals
 
 
@@ -334,6 +352,8 @@ def log_token_usage(
     output_tokens: int,
     total_tokens: int,
     estimated_cost: float,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
 ) -> None:
     (
         get_supabase_client()
@@ -345,6 +365,8 @@ def log_token_usage(
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,
                 "estimated_cost": estimated_cost,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
             }
         )
         .execute()
@@ -563,6 +585,29 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
     token_totals = _token_totals_by_session(session_ids) if session_ids else {}
     total_tokens = sum(entry["total_tokens"] for entry in token_totals.values())
     total_estimated_cost = sum(entry["estimated_cost"] for entry in token_totals.values())
+    total_cache_creation_tokens = sum(
+        entry["cache_creation_input_tokens"] for entry in token_totals.values()
+    )
+    total_cache_read_tokens = sum(
+        entry["cache_read_input_tokens"] for entry in token_totals.values()
+    )
+    # Ahorro real: lo que habrian costado esos tokens de cache a precio de
+    # input normal (1x) menos lo que efectivamente costaron (lectura 0.1x,
+    # escritura 1.25x). La escritura es mas cara que 1x, asi que el ahorro
+    # neto ya descuenta esa sobreprima -- no es solo "tokens leidos * 0.9".
+    cache_tokens_at_full_price = (
+        (total_cache_creation_tokens + total_cache_read_tokens)
+        / 1_000_000
+        * PRICE_PER_MILLION_INPUT_TOKENS
+    )
+    cache_tokens_actual_cost = (
+        total_cache_creation_tokens
+        / 1_000_000
+        * PRICE_PER_MILLION_INPUT_TOKENS
+        * CACHE_WRITE_MULTIPLIER
+        + total_cache_read_tokens / 1_000_000 * PRICE_PER_MILLION_INPUT_TOKENS * CACHE_READ_MULTIPLIER
+    )
+    cache_savings_usd = cache_tokens_at_full_price - cache_tokens_actual_cost
 
     # El promedio se calcula solo sobre sesiones con al menos un registro en
     # token_usage: conversaciones anteriores a la migracion nunca pudieron
@@ -611,6 +656,9 @@ def get_business_stats(business_id: str) -> dict[str, Any]:
         "conversations_by_category": conversations_by_category,
         "total_tokens": total_tokens,
         "total_estimated_cost": total_estimated_cost,
+        "cache_creation_tokens": total_cache_creation_tokens,
+        "cache_read_tokens": total_cache_read_tokens,
+        "cache_savings_usd": round(cache_savings_usd, 6),
         "avg_tokens_per_conversation": avg_tokens_per_conversation,
         "total_orders": total_orders,
         "orders_by_status": orders_by_status,
