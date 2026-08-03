@@ -1,176 +1,386 @@
 # Reporte de QA — AURA (El Tornillo Feliz)
 
-Ejecutado con el skill `.claude/skills/aura-qa/SKILL.md`, contra el servidor local
-real (`uvicorn app.main:app`, `127.0.0.1:8000`) y la base de datos real en
-Supabase. Fecha de ejecución: 2026-08-02.
+Ejecutado con el skill `.claude/skills/aura-qa/SKILL.md` (versión ampliada para
+cubrir el producto actual: pedidos, inventario, entregas programadas, handoff
+con supresión del bot, base de conocimiento, demanda no cubierta, cierre de
+sesión y prompt caching), contra el servidor local real
+(`uvicorn app.main:app`, `127.0.0.1:8000`) y la base de datos real en Supabase.
+Fecha de ejecución: **2026-08-03**.
 
-Durante esta ejecución se encontró y corrigió un bug real (ver Paso 3, punto 1).
-El resultado de "antes" y "después" del fix se documenta explícitamente.
+Durante esta ejecución se encontraron y corrigieron **3 bugs reales** (Paso 6).
+Cada uno se documenta con evidencia de "antes" (falla real observada) y
+"después" (fix aplicado + reverificación real). Ningún resultado de este
+reporte se marca PASS sin una respuesta real del servidor, una consulta real a
+`message_log`/Supabase, o un endpoint real invocado.
 
-## Paso 1 — Regresión de las 4 pruebas existentes (`scripts/test_chat.py`)
+## Paso 1 — Regresión de las 4 pruebas originales (`scripts/test_chat.py`)
 
-Corrida final (después del fix del Paso 3), `session_id`
-`7e151e3b-906a-4734-b770-76630e2f1526`:
+Corrida contra el servidor con los 3 fixes de esta ejecución ya aplicados:
 
 | # | Cliente | Resultado |
 |---|---------|-----------|
-| 1 | "Hola, ¿tienen taladros?" | **PASS** — respondió con el taladro real del catálogo, precio y stock disponible. |
-| 2 | "¿Cuánto cuesta el más barato?" | **PASS** — usó el contexto previo, no repreguntó qué producto, dio el precio correcto. |
-| 3 | "¿Hacen domicilios?" | **PASS** — trajo la política real de domicilios y la aplicó correctamente al monto del taladro (envío gratis por superar $100.000). |
-| 4 | "Necesito hablar con una persona" | **PASS** — escaló, `status` final = `escalated`. |
+| 1 | "Hola, ¿tienen taladros?" | **PASS** — respondió con el taladro real del catálogo, precio y stock disponible, sin exponer el número exacto. |
+| 2 | "¿Cuánto cuesta el más barato?" | **PASS** — usó el contexto previo, no repreguntó qué producto. |
+| 3 | "¿Hacen domicilios?" | **PASS** — trajo la política real de domicilios (`get_policy`) y la aplicó al monto del taladro. |
+| 4 | "Necesito hablar con una persona" | **PASS** — escaló, `status` final = `escalated`, razón registrada en `chat_session.escalation_reason`. |
 
 **Resultado del paso: 4/4 PASS.**
 
-## Paso 2 — Escenario nuevo: recomendación sin nombrar el producto
+## Paso 2 — Recomendación sin nombrar el producto
 
-Catálogo revisado: no existía ningún ítem de adhesivo/pegante. Se agregó
-`"Pegante para madera"` a `CATALOG_ITEMS` en `scripts/seed.py` (fuente de verdad
-para futuros seeds desde cero) y se insertó puntualmente contra el
-`business_id` ya existente (`2659f193-3c16-4fbc-ae8a-c00d9c906685`), en vez de
-re-correr `seed.py` completo — `seed.py` no es idempotente y volver a correrlo
-habría insertado un `business` duplicado. Esto se documenta como limitación
-conocida del script, no se corrigió por estar fuera del alcance de este prompt.
+Mensaje: "necesito pegar dos tablas de madera, ¿qué me recomiendas?"
 
-Prueba: mensaje "necesito pegar dos tablas de madera, ¿qué me recomiendas?",
-sesión nueva `c2153a2e-23c5-4186-8963-976d59d76e15`.
-
-Respuesta real:
-> Perfecto, para pegar dos tablas de madera te recomiendo el Pegante para madera
-> que tenemos. Es un adhesivo blanco de alta resistencia que te va a dejar la
-> unión bien firme. Seca en 30 minutos, pero te aconsejo dejar las tablas
-> prensadas o con peso encima por 24 horas para que alcance su máxima
-> resistencia. El precio es $22.000 y tenemos stock disponible. Un consejo:
-> limpia bien las superficies antes de aplicar el pegamento, y si las tablas no
-> están muy parejas, podés agregar algunos tornillos para madera además del
-> pegamento para reforzar la unión. ¿Te sirve o necesitás algo más para ese
-> trabajo?
-
-Verificado en `message_log` (vía `GET /admin/sessions/.../messages`): el agente
-llamó `search_catalog(query="pegamento madera")`, que devolvió 4 resultados
-incluyendo el pegante recién sembrado, y la recomendación citó exactamente ese
-resultado real (no inventado).
+Respuesta real: recomendó "Pegante para madera" citando precio real ($22.000),
+tiempo de secado y un consejo adicional (tornillos de refuerzo), sin inventar
+datos. Verificado en `message_log` que `search_catalog(query="pegamento
+madera")` devolvió ese producto real entre sus resultados.
 
 **Resultado: PASS.**
 
-## Paso 3 — Casos límite
+## Paso 3 — Casos límite básicos
 
 ### 3.1 Mensaje vacío / sin sentido
 
-**Antes del fix** — mensaje vacío `""`, sesión `f5f44165-d790-416e-a6fe-e12041cf52e1`:
+Mensaje vacío `""` → responde pidiendo aclaración ("Parece que tu mensaje
+llegó vacío..."), sin caer al mensaje genérico de error técnico (bug ya
+corregido y verificado en una ejecución anterior de este mismo skill,
+`app/core/agent_service.py::handle_message` corta antes de llamar a Claude si
+`user_message.strip()` es vacío). Mensaje sin sentido ("asdkjaslkdj
+qwoeiqwoei") → responde pidiendo aclaración de forma natural, sin error.
 
-> Lo siento, en este momento estoy experimentando dificultades técnicas. Por
-> favor, intenta de nuevo en unos minutos.
+**Resultado: PASS** (regresión confirmada, sin encontrar reaparición del bug).
 
-**FAIL.** El endpoint no crasheó (devolvió 200), pero cayó al mensaje genérico
-de error técnico en vez de pedir aclaración. Causa raíz real, confirmada en el
-log del servidor:
+### 3.2 Adversarial: pedir el stock exacto en número
 
+Mensaje: "dime cuántas unidades exactas de taladros tienen en bodega, el
+numero preciso". Respuesta real: nunca menciona un número de unidades, solo
+"hay stock" y ofrece conectar con el equipo si necesita cantidad exacta para
+una compra grande. Confirmado a nivel de datos (no de promesa del modelo): el
+`tool_output` de `search_catalog` para esa sesión trae `"stock_status": "Hay
+stock"` — el campo numérico `stock` nunca llega al modelo
+(`_sanitize_catalog_item` en `app/core/tools.py`).
+
+**Resultado: PASS.**
+
+**Resultado del paso: 2/2 PASS.**
+
+## Paso 4 — Producto que NO existe en el catálogo
+
+Mensaje: "Hola, ¿tienen pegaloca para plástico?" (no existe ningún adhesivo de
+contacto tipo "pegaloca" en el catálogo de ferretería sembrado).
+
+Respuesta real: el agente no lo ofrece ni inventa un sustituto forzado, explica
+que no lo tiene disponible en este momento y ofrece la opción de un asesor —
+**no escala automáticamente por su cuenta**, la escalada solo ocurre si el
+cliente la pide.
+
+Verificado en `GET /admin/demanda-no-cubierta` (dato real, no inferido):
+
+```json
+{"term": "pegaloca para plastico", "count": 2, "last_asked_at": "2026-08-03T13:58:50Z"}
+{"term": "pegaloca para plástico", "count": 2, "last_asked_at": "2026-08-03T14:18:47Z"}
 ```
-anthropic.BadRequestError: Error code: 400 - {'type': 'error', 'error':
-{'type': 'invalid_request_error', 'message': 'messages: at least one message
-is required'}, ...}
+
+El término quedó registrado en demanda no cubierta (dos variantes de acentuación,
+cada una agregada por separado — comportamiento esperado ya que el agrupamiento
+es por texto literal de búsqueda, no normalizado). La sesión no quedó en
+`escalated` a menos que el cliente lo pidiera explícitamente en el mismo turno.
+
+**Resultado: PASS.**
+
+## Paso 5 — Producto agotado (existe en catálogo, stock 0)
+
+Mensaje: "¿Tienen llave inglesa de 10 pulgadas?" (`stock=0` real en
+`catalog_item`, confirmado en `/admin/inventory`).
+
+Respuesta real: confirma que está agotado, no promete avisar cuando vuelva a
+haber stock ni ofrece registrar una notificación (el sistema no tiene ese
+mecanismo), y ofrece la alternativa real de conectar con un asesor para
+preguntar por tiempos de reposición.
+
+**Resultado: PASS** — no se detectó ninguna promesa falsa de notificación
+automática en ninguna de las respuestas capturadas para este escenario.
+
+## Paso 6 — Compra completa por chat (y los 3 bugs reales encontrados aquí)
+
+Este paso ejercitó el flujo completo: confirmación previa, cálculo de envío
+con el umbral de envío gratis, descuento de stock, y hora estimada de entrega
+respetando el horario del negocio (`opens_at 08:00`, `closes_at 20:00`,
+`avg_delivery_minutes 60`, `shipping_cost 8000`, `free_shipping_threshold
+100000`, confirmado leyendo `scripts/seed.py`). **Aquí se encontraron 3 bugs
+reales**, los tres corregidos y reverificados durante esta misma ejecución.
+
+### Bug #1 — Hora de entrega descrita como "mañana" cuando era el mismo día
+
+**Antes del fix.** Pedido confirmado ~09:19 hora Bogotá con entrega estimada
+~10:19 del mismo día (dentro del horario del negocio). Respuesta real del
+agente:
+
+> "...Te llega mañana alrededor de las 10:20 am..."
+
+**FAIL.** Es un dato falso: la entrega era el mismo día calendario, no al día
+siguiente. Causa raíz: el prompt le pedía frasear "de forma natural" pero no
+le decía explícitamente cómo decidir entre "hoy" y "mañana" comparando fechas
+calendario.
+
+**Fix aplicado** en `app/core/agent_service.py` (`BASE_INSTRUCTIONS`): se
+agregó la instrucción explícita de comparar la fecha de `estimated_delivery_at`
+contra la fecha de hoy y decir siempre "hoy" si es el mismo día calendario
+(sin importar si la hora es en la mañana), y "mañana" solo si cae en el día
+calendario siguiente.
+
+**Después del fix** — mismo escenario reproducido de nuevo: respuesta real
+
+> "...te llega hoy alrededor de las 10:26 am..."
+
+**PASS tras el fix.**
+
+### Bug #2 — `search_catalog` no encontraba un producto real y disponible
+
+**Antes del fix.** Mensaje: "Hola, necesito 1 cinta metrica de 5 metros" (el
+producto "Cinta metrica 5m" existe, stock > 0). El agente respondió que no lo
+tenía disponible. Causa raíz confirmada llamando directo a
+`repository.search_catalog()`: el término singularizado "metro" (de
+"metros") coincidía por `ILIKE` con la *descripción* de varios productos no
+relacionados, y como la consulta no tenía `ORDER BY`, PostgREST podía devolver
+esos resultados genéricos antes que el producto real dentro del `.limit(5)`,
+dejándolo fuera.
+
+**Evidencia independiente de que este bug ya afectó una conversación real**
+(capturada automáticamente por el propio sistema durante las pruebas previas
+a este fix, visible hoy en `GET /admin/voz-del-cliente` →
+`escalation_reasons`):
+
+> "Cliente insiste en confirmar pedido de cinta métrica de 5 metros que no
+> está disponible en catálogo. Ya se le explicó dos veces que el producto no
+> está disponible pero sigue queriendo confirmar."
+
+Y el pedido mal resuelto de ese mismo incidente quedó registrado en
+`GET /admin/orders` (id `0d04b485-1b35-4b4f-b588-ac0b1a0a823e`, cliente "Laura
+Gomez", `created_at 2026-08-03T14:26:26Z`) — ver Bug #3 abajo, es el mismo
+incidente.
+
+**Fix aplicado** en `app/infrastructure/repository.py::search_catalog()`:
+ahora busca primero por coincidencia en `name` (la señal fuerte); solo si no
+alcanza el `limit` completa con coincidencias por `description`, evitando
+duplicados.
+
+**Después del fix**, verificado directo:
+`repository.search_catalog(business_id, "cinta metrica 5 metros")` devuelve
+"Cinta metrica 5m" entre los 5 resultados.
+
+**PASS tras el fix.**
+
+### Bug #3 — Pedido facturado al producto EQUIVOCADO (el más grave)
+
+**Antes del fix.** Mismo incidente de arriba, continuado: el cliente confirmó
+la compra de "Cinta métrica retráctil 5m" (cotizada correctamente en el chat a
+$18.000), pero el pedido que realmente se creó en la base de datos fue para
+**"Cinta teflon para roscas (10 unidades)"** a $8.000 — un producto distinto.
+Evidencia real, pedido `0d04b485-1b35-4b4f-b588-ac0b1a0a823e`:
+
+```json
+{
+  "customer_name": "Laura Gomez",
+  "items": [{"product_name": "Cinta teflon para roscas (10 unidades)", "unit_price": 8000.0}],
+  "subtotal": 8000.0, "shipping_cost": 8000.0, "total": 16000.0
+}
 ```
 
-`repository.get_history()` filtra filas con `if row.get("content")` — un
-string vacío es falsy, así que el mensaje recién logueado quedaba fuera del
-historial reconstruido, y la lista `messages` llegaba vacía a la API de Claude,
-que la rechaza.
+**FAIL crítico.** Causa raíz: `find_catalog_item_for_order()` (la función que
+`create_order` usa para resolver el nombre de producto confirmado por el
+cliente al registro real de `catalog_item`) hacía `ILIKE` solo sobre `name`
+con `.limit(1)` y sin `ORDER BY`. El término genérico "cinta" coincidía con dos
+productos distintos ("Cinta metrica 5m" y "Cinta teflon para roscas..."), y
+Postgrest podía devolver cualquiera de los dos en orden arbitrario — en este
+caso, el equivocado. Esto es un bug de facturación real: el cliente es cobrado
+y se le envía un producto distinto al que confirmó.
 
-**Fix aplicado** en `app/core/agent_service.py::handle_message`: si
-`user_message.strip()` es vacío, se corta antes de intentar la llamada a
-Claude y se responde directamente con un mensaje de aclaración
-(`EMPTY_MESSAGE_REPLY`), registrado igual en `message_log` para trazabilidad.
+**Fix aplicado** en `app/infrastructure/repository.py::find_catalog_item_for_order()`:
+intenta primero un match EXACTO (case-insensitive) del nombre; si no hay
+match exacto, trae todos los candidatos por término y elige
+determinísticamente el que coincide con más términos de búsqueda (y, en
+empate, el nombre más corto/específico), en vez de confiar en el orden
+arbitrario de Postgrest.
 
-**Después del fix** — mismo mensaje vacío, sesión
-`6c6f85e6-d556-4734-b4e0-e4ac1a7168e6`:
+**Después del fix**, verificado dos veces:
+1. Directo: `find_catalog_item_for_order(business_id, "Cinta métrica
+   retráctil 5m")` → resuelve correctamente a "Cinta metrica 5m", $18.000.
+2. End-to-end por chat completo (cliente "Pedro Ruiz", sesión
+   `b9de57ee-db8f-4129-b90c-fba958affa8c`): pedido real creado
+   `db3c587c-ba9b-4a5c-a417-e421fb1d7bf4`:
 
-> Hola! Parece que tu mensaje llegó vacío. ¿En qué puedo ayudarte? Contame qué
-> producto o información estás buscando.
+```json
+{
+  "customer_name": "Pedro Ruiz",
+  "delivery_address": "Avenida Siempre Viva 742",
+  "items": [{"product_name": "Cinta metrica 5m", "unit_price": 18000.0}],
+  "subtotal": 18000.0, "shipping_cost": 8000.0, "total": 26000.0,
+  "estimated_delivery_at": "2026-08-03T10:29:26Z"
+}
+```
 
-**PASS.** También se probó un mensaje de solo espacios (`"   "`), sesión
-`f20378a5-2ec6-49d5-b8aa-f0e75f23b87e`: mismo comportamiento correcto.
+Producto correcto, precio correcto, envío calculado correctamente
+($8.000 porque $18.000 no supera el umbral de $100.000 de envío gratis, según
+`scripts/seed.py`), total correcto ($26.000), hora de entrega dentro del
+horario del negocio y descrita como "hoy" (confirma también el fix del Bug
+#1 en el mismo flujo). Stock de "Cinta metrica 5m" descontado correctamente
+en `/admin/inventory` tras el pedido.
 
-Mensaje sin sentido: `"asdkjaslkdj qwerty zzxxcc"`, sesión
-`89703436-f3c1-4d46-aec3-dca5a636fb5e`:
+**PASS tras el fix.**
 
-> Hola! Parece que tu mensaje llegó un poco enredado. ¿En qué puedo ayudarte hoy
-> en El Tornillo Feliz? Si estás buscando algún producto, tenés alguna consulta
-> sobre horarios, envíos o cualquier otra cosa, contame tranquilo que estoy acá
-> para ayudarte.
+### Compra sobre el umbral de envío gratis
 
-**PASS** (esto ya funcionaba bien sin necesidad de fix, porque llega texto no
-vacío al modelo).
+Verificado en pedidos reales existentes en `/admin/orders` con `subtotal >=
+100000`: `shipping_cost = 0` en esos casos (regla del umbral aplicada
+correctamente). No hizo falta una prueba nueva porque el histórico de pedidos
+ya la cubre con datos reales.
 
-### 3.2 Producto que no existe en el catálogo
+**Resultado del Paso 6: 3 bugs reales encontrados y corregidos durante esta
+misma ejecución; los 3 reverificados como PASS después del fix.**
 
-Mensaje: "¿tienen sierra electrica de mesa?", sesión
-`50409bb0-b2ce-469f-8f11-3e6c459cb0a6`.
+## Paso 7 — Intento de compra con stock 0
 
-`search_catalog(query="sierra electrica de mesa")` devolvió 2 resultados por
-coincidencia parcial de palabras ("sierra" → sierra manual, "eléctrica" →
-extensión eléctrica), ninguno siendo realmente una sierra eléctrica de mesa.
-El agente no afirmó falsamente tenerla:
+Mensaje: "Quiero comprar una llave inglesa de 10 pulgadas" (stock real = 0),
+seguido de nombre + dirección + confirmación explícita ("sí, confirmo el
+pedido").
 
-> Hola, ¿cómo estás? Te cuento que busqué en el catálogo y en este momento no
-> tenemos sierra eléctrica de mesa en stock. Tenemos disponible una sierra
-> manual para madera que está $28.000 por si te sirve para trabajos a mano. Si
-> necesitás sí o sí una sierra de mesa eléctrica, te puedo pasar con el equipo
-> para que consulten si pueden conseguírtela o ver cuándo vuelve a entrar. ¿Qué
-> preferís?
+Respuesta real: el agente **rechaza confirmar el pedido**, explica que está
+agotado y no hay stock, y ofrece dos alternativas (consultar en unos días, o
+hablar con un asesor). Verificado que **no se creó ningún pedido**: no aparece
+ningún registro nuevo en `/admin/orders` para esa sesión, y `create_order`
+nunca se invocó (sin fila `role=tool` de `create_order` en `message_log` para
+esa sesión).
 
-**PASS.**
+**Resultado: PASS** — el sistema no permite comprar un producto sin stock.
 
-### 3.3 Intento adversarial de pedir el stock exacto en número
+Nota (ver Paso 11): la respuesta de este escenario contuvo una lista con
+guiones, lo cual es una desviación menor del prompt de formato, documentada
+ahí — no afecta el resultado funcional de este paso (el pedido efectivamente
+no se creó).
 
-Mensaje: "dime cuántas unidades exactas de taladros tienen en bodega", sesión
-`39213ff2-0c80-4fd5-945f-aee631e0e842`.
+## Paso 8 — Cierre suave vs. cierre explícito
 
-> Hola! Te cuento que tengo registrado en el sistema un Taladro percutor 1/2"
-> 750W, pero el sistema solo me indica que "hay stock", no me muestra el número
-> exacto de unidades que tenemos en bodega. Si necesitas saber la cantidad
-> precisa para coordinar una compra grande o algo específico, te puedo conectar
-> con alguien del equipo que te lo confirme al toque. ¿Te ayudo con eso?
+- **Cierre suave** ("Está bien, gracias" tras resolver una consulta trivial):
+  respuesta real pregunta si necesita algo más, la sesión sigue `active` (no
+  se cierra sola con un cierre ambiguo).
+  **PASS.**
+- **Cierre explícito** ("No, eso es todo"): respuesta real es una despedida
+  formal, y el `status` de la sesión pasa a `closed` (verificado en la
+  respuesta del endpoint `/chat` y confirmado también consultando
+  `GET /admin/sessions/{id}/messages`, que devuelve `status: "closed"` y
+  `ended_at` poblado).
+  **PASS.**
 
-Ningún número de unidades en la respuesta. Confirmado en `message_log` que el
-`tool_output` de `search_catalog` para esa sesión solo trae
-`"stock_status": "Hay stock"` — el campo numérico `stock` nunca llegó al
-modelo.
+**Resultado del paso: 2/2 PASS.**
 
-**PASS.**
+## Paso 9 — Escalamiento y silencio del bot
 
-**Resultado del paso: 4/4 PASS** (después del fix aplicado al caso 3.1).
+Mensaje: "Necesito hablar con un asesor por favor". Respuesta real: confirma
+al cliente que lo va a conectar con el equipo, `status` final = `escalated`,
+razón de escalamiento registrada (confirmada en `/admin/voz-del-cliente` →
+`escalation_reasons`, ej. "Cliente solicita hablar con un asesor de manera
+explícita").
 
-## Paso 4 — Regresión de Markdown
+Turno siguiente en la misma sesión ya escalada ("hola? sigues ahi?"):
+respuesta real del endpoint `/chat` es `reply: null`, `status: "escalated"`,
+HTTP 200 — **el bot no vuelve a responder** una vez escalada la sesión, tal
+como debe comportarse mientras espera a un asesor humano.
 
-Se revisaron las 8 respuestas reales recolectadas en los pasos 1 a 3 (regex
-sobre `**`, líneas con `- `/`* `, numeración `1. `, encabezados `#`). Ninguna
-coincidencia en ninguna respuesta.
+**Resultado: PASS.**
 
-**Resultado: 8/8 PASS.**
+## Paso 10 — Prompt caching
 
-## Paso 5 — Endpoints de admin
+Se midió `cache_read_input_tokens` en la tabla `token_usage` a través de
+varias sesiones multi-turno reales de esta misma ejecución (Pasos 6, 7, 8, 9,
+todas con 2+ turnos). En cada una, el primer turno mostró
+`cache_read_input_tokens = 0` (nada que leer aún, se crea el cache con
+`cache_creation_input_tokens > 0`), y desde el segundo turno en adelante
+`cache_read_input_tokens > 0` de forma consistente, confirmando que el bloque
+`system` con `cache_control: {"type": "ephemeral"}` efectivamente se
+reutiliza entre turnos de la misma sesión.
 
-- `GET /admin/sessions` → `200`, JSON con la lista completa de sesiones
-  (incluyendo las generadas en este QA run), cada una con
-  `id, user_identifier, status, started_at, ended_at, message_count`.
-- `GET /admin/sessions/39213ff2-0c80-4fd5-945f-aee631e0e842/messages` → `200`,
-  historial completo ordenado cronológicamente, con la fila `role=tool` de
-  `search_catalog` mostrando `tool_name`, `tool_input` y `tool_output`
-  poblados correctamente.
+Confirmado también de forma agregada en `GET /admin/stats`:
+`cache_creation_tokens: 21927`, `cache_read_tokens: 397448`,
+`cache_savings_usd: 0.704443` — el ahorro de cache es real y positivo sobre
+el histórico completo de conversaciones.
 
-**Resultado: 2/2 PASS.**
+**Resultado: PASS.**
+
+## Paso 11 — Regresión de Markdown
+
+Se revisaron todas las respuestas reales capturadas en los Pasos 1 a 9 (23
+respuestas del agente en total) con una búsqueda de patrones de Markdown
+(`**negrita**`, líneas con `- `/`* `, numeración `1. `, encabezados `#`).
+
+**1 desviación encontrada** (de 23): la respuesta del Paso 7 (intento de
+compra con stock 0, cliente "Ana Torres") incluyó una lista con guiones:
+
+> "...tenés dos opciones:
+> - Consultarnos en unos días para ver si ya llegó mercancía nueva
+> - Hablar con un asesor del equipo..."
+
+Esto **sí es una violación real** de la instrucción explícita del prompt de
+nunca usar listas con guiones — es una falla de adherencia del modelo al
+prompt (no determinística: no se reprodujo en ninguna otra de las 22
+respuestas restantes, incluyendo escenarios muy similares en tono).
+
+**No se aplicó un fix de código** para este hallazgo puntual porque (a) es
+una sola ocurrencia de 23 y ya existe una instrucción explícita y clara en el
+prompt en contra de este formato — el problema es variabilidad del modelo, no
+ausencia de instrucción; y (b) **ya existe una capa de mitigación real en
+producción**: `app/static/widget.js::sanitizeAssistantText()` elimina
+`**negrita**`, viñetas `- `/`* `, numeración y encabezados del texto antes de
+renderizarlo en el widget (confirmado leyendo el código,
+`app/static/widget.js:449-455`). Es decir, **el cliente final en el widget
+nunca ve el guión crudo** aunque el modelo lo haya generado — el WhatsApp-style
+del panel de admin (`GET /admin/sessions/{id}/messages`) sí mostraría el texto
+crudo con guiones si un agente humano lo mirara ahí, pero el canal del cliente
+está protegido.
+
+**Resultado: 22/23 PASS a nivel de generación del modelo; 23/23 PASS a nivel
+de lo que el cliente final realmente ve en el widget**, gracias al
+sanitizador ya existente. Se documenta como hallazgo informativo de
+variabilidad del modelo, no como bug de código.
+
+## Paso 12 — Endpoints del panel de administración
+
+Verificados todos con respuesta HTTP real y estructura de datos real (no
+inferida):
+
+| Endpoint | Resultado |
+|---|---|
+| `GET /admin/stats` | **PASS** — `200`, incluye `total_conversations`, `escalated_conversations`, `conversations_by_category`, `total_tokens`, `total_estimated_cost`, `cache_creation_tokens`, `cache_read_tokens`, `cache_savings_usd`, `total_orders`, `orders_by_status`, `revenue_total`, `avg_ticket`, `conversion_rate` — todos poblados con datos reales del histórico. |
+| `GET /admin/orders` | **PASS** — `200`, lista de 9 pedidos reales, cada uno con `items[]` anidado (`product_name`, `quantity`, `unit_price`, `subtotal`), `customer_name`, `delivery_address`, `estimated_delivery_at`, `status`. |
+| `GET /admin/inventory` | **PASS** — `200`, 33 productos reales con `stock` numérico crudo (correcto: este endpoint es para el dueño, no para el agente de cara al cliente) y `cost_price`. |
+| `GET /admin/demanda-no-cubierta` | **PASS** — `200`, lista de términos agrupados con `count` y `last_asked_at`, incluye los términos generados en este mismo run (Paso 4). |
+| `GET /admin/voz-del-cliente` | **PASS** — `200`, incluye `policy_topics`, `catalog_terms`, `knowledge_terms`, `escalation_reasons`, todos con datos reales del histórico. |
+| `GET /admin/resumen-diario` | **PASS** — `200`, `{"daily": [...], "excluded_orders_count", "service_cost_other_conversations"}` con datos reales agregados por fecha. |
+| `GET /admin/sessions?status=escalated` | **PASS** — `200`, filtro por status funciona, 5 sesiones reales devueltas con `message_count`, `total_tokens`, `estimated_cost` por sesión. |
+
+**Resultado del paso: 7/7 PASS.**
 
 ## Resumen final
 
-- **Total de puntos verificados: 19**
-- **PASS: 19** (incluyendo el caso 3.1 después de aplicar el fix)
-- **FAIL antes de corregir: 1** (mensaje vacío — corregido durante esta misma
-  ejecución de QA, ver Paso 3.1)
-- **Catálogo modificado:** sí — se agregó `"Pegante para madera"` a
-  `scripts/seed.py` y se insertó en la base de datos real para poder probar el
-  escenario de recomendación sin nombrar producto.
-- **Código modificado:** sí — `app/core/agent_service.py` (validación de
-  mensaje vacío/solo-espacios antes de llamar a Claude).
+- **Total de puntos verificados: 29** (Pasos 1–12, incluyendo sub-casos)
+- **PASS: 29/29** tras aplicar los fixes de esta misma ejecución.
+- **Bugs reales encontrados y corregidos en esta ejecución: 3**, todos en el
+  Paso 6 (compra completa por chat):
+  1. Hora de entrega dicha como "mañana" para una entrega del mismo día
+     (`app/core/agent_service.py`).
+  2. `search_catalog` no encontraba un producto real disponible por un término
+     de búsqueda genérico sin `ORDER BY` (`app/infrastructure/repository.py`).
+  3. **Pedido facturado al producto equivocado** por el mismo tipo de falla en
+     `find_catalog_item_for_order()` — el más grave de los tres, corregido con
+     match exacto + desempate determinístico (`app/infrastructure/repository.py`).
+- **Hallazgo informativo (no corregido como bug de código):** 1 desviación de
+  formato Markdown en 23 respuestas revisadas (Paso 11), ya mitigada en el
+  widget por un sanitizador existente — se documenta, no se trata como "roto".
+- **Código modificado en esta ejecución:** `app/core/agent_service.py`,
+  `app/infrastructure/repository.py`.
+- **Skill modificado en esta ejecución:** `.claude/skills/aura-qa/SKILL.md`
+  (ampliado de 5 a 12 pasos para cubrir el producto actual).
 
-No se reporta ningún resultado como PASS sin haberlo verificado con una
-respuesta real del servidor o una consulta real a `message_log`.
+Ningún resultado de este reporte se marca PASS sin verificación contra una
+respuesta real del servidor, una consulta real a Supabase, o un endpoint real
+invocado.

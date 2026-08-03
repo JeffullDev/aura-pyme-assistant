@@ -63,23 +63,44 @@ def search_catalog(
     if not terms:
         return []
 
-    # OR entre todos los terminos: preferimos recall sobre precision, decir "no
-    # tenemos" cuando si hay stock es mucho peor que devolver un resultado de mas.
-    conditions = ",".join(
-        f"{field}.ilike.%{term}%" for term in terms for field in ("name", "description")
-    )
+    def _base_request():
+        request = (
+            get_supabase_client()
+            .table("catalog_item")
+            .select("name, description, price, stock, category")
+            .eq("business_id", business_id)
+        )
+        if category:
+            request = request.ilike("category", f"%{_sanitize_filter_term(category)}%")
+        return request
 
-    request = (
-        get_supabase_client()
-        .table("catalog_item")
-        .select("name, description, price, stock, category")
-        .eq("business_id", business_id)
-        .or_(conditions)
-    )
-    if category:
-        request = request.ilike("category", f"%{_sanitize_filter_term(category)}%")
+    # Match en `name` primero: es la senal fuerte (el cliente suele nombrar el
+    # producto). Sin esta prioridad, un termino generico como "metros" (que
+    # aparece en decenas de descripciones de productos medidos en metros) puede
+    # llenar el limit() con matches solo-por-descripcion y desplazar del top-N
+    # al producto que el cliente realmente pidio -- Postgrest no ordena por
+    # relevancia, asi que el orden de "cual de los matches entra en el limite"
+    # no es fiable si se buscan ambos campos en una sola query.
+    name_conditions = ",".join(f"name.ilike.%{term}%" for term in terms)
+    name_matches = _base_request().or_(name_conditions).limit(limit).execute().data
 
-    return request.limit(limit).execute().data
+    if len(name_matches) >= limit:
+        return name_matches
+
+    # Recall sobre precision: si el nombre no alcanza el limite, se completa
+    # con matches por descripcion (evitando duplicados) en vez de devolver
+    # menos resultados de los que hay disponibles.
+    seen_names = {item["name"] for item in name_matches}
+    desc_conditions = ",".join(f"description.ilike.%{term}%" for term in terms)
+    desc_matches = _base_request().or_(desc_conditions).limit(limit).execute().data
+    for item in desc_matches:
+        if item["name"] not in seen_names:
+            name_matches.append(item)
+            seen_names.add(item["name"])
+            if len(name_matches) >= limit:
+                break
+
+    return name_matches
 
 
 def search_knowledge_base(
@@ -727,21 +748,55 @@ def find_catalog_item_for_order(business_id: str, product_name: str) -> dict[str
     """Mismo enfoque ILIKE que search_catalog, pero solo sobre `name` (no
     description) y trayendo `id`/`stock` crudos: create_order necesita el id
     para el FK de order_items y el stock exacto para validar/descontar."""
+
+    def _select(request):
+        return request.select("id, name, price, stock, category, cost_price").eq(
+            "business_id", business_id
+        )
+
+    # Intento 1: match exacto (case-insensitive) contra el nombre tal cual el
+    # tool_definition de create_order le pide al modelo que lo pase ("tal como
+    # aparece en el catalogo"). Si el modelo cita el nombre literal, esto evita
+    # por completo la ambiguedad de abajo.
+    sanitized = _sanitize_filter_term(product_name)
+    if sanitized:
+        exact = (
+            _select(get_supabase_client().table("catalog_item"))
+            .ilike("name", sanitized)
+            .limit(1)
+            .execute()
+        )
+        if exact.data:
+            return exact.data[0]
+
     terms = _search_terms(product_name)
     if not terms:
         return None
 
+    # Sin match exacto: un termino generico (ej. "cinta") puede matchear varios
+    # productos distintos por `name.ilike`. Sin ORDER BY, Postgrest no garantiza
+    # cual entra en un limit(1) -- eso puede facturar/descontar stock de un
+    # producto DISTINTO al que el cliente confirmo. En vez de confiar en el
+    # orden arbitrario de la base, se traen todos los candidatos y se elige el
+    # que matchea mas terminos de busqueda (y, en empate, el nombre mas corto =
+    # mas especifico), de forma deterministica.
     conditions = ",".join(f"name.ilike.%{term}%" for term in terms)
     result = (
-        get_supabase_client()
-        .table("catalog_item")
-        .select("id, name, price, stock, category, cost_price")
-        .eq("business_id", business_id)
-        .or_(conditions)
-        .limit(1)
-        .execute()
+        _select(get_supabase_client().table("catalog_item")).or_(conditions).execute()
     )
-    return result.data[0] if result.data else None
+    candidates = result.data
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    def _match_score(item: dict[str, Any]) -> tuple[int, int]:
+        name_lower = item["name"].lower()
+        matched_terms = sum(1 for term in terms if term.lower() in name_lower)
+        return (-matched_terms, len(item["name"]))
+
+    candidates.sort(key=_match_score)
+    return candidates[0]
 
 
 def update_catalog_stock(catalog_item_id: str, new_stock: int) -> None:
