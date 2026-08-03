@@ -84,21 +84,38 @@
 
       <main class="admin-content">
         <section class="admin-view" id="view-resumen">
+          <div class="resumen-secondary-grid">
+            <div class="card card-prominent">
+              <h2>Conversaciones atendidas</h2>
+              <div class="conversations-summary">
+                <div class="conversations-breakdown" id="conversations-breakdown">
+                  <p class="admin-empty">Cargando...</p>
+                </div>
+                <div id="conversations-pie-chart" class="conversations-pie-chart">
+                  <p class="admin-empty">Cargando...</p>
+                </div>
+              </div>
+              <button type="button" class="btn-handoff btn-secondary btn-ver-todas" id="ver-todas-conversaciones-btn">Ver todas</button>
+            </div>
+
+            <div class="card card-prominent">
+              <h2>Demanda no cubierta</h2>
+              <span class="hint">Productos que los clientes pidieron y no tenés en el catálogo. Una oportunidad de compra que se está perdiendo.</span>
+              <div id="demanda-no-cubierta" class="demanda-no-cubierta">
+                <p class="admin-empty">Cargando...</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-prominent">
+            <h2>Lo que dice la gente</h2>
+            <span class="hint">Qué le pregunta y pide la gente al asistente, tal cual lo escribió — sin inventar tendencias, solo lo que quedó registrado en cada herramienta que el agente usó.</span>
+            <div id="voz-del-cliente" class="voz-cliente-grid">
+              <p class="admin-empty">Cargando...</p>
+            </div>
+          </div>
+
           <div class="kpi-grid">
-            <div class="metric-card kpi-card kpi-card-primary">
-              <span class="metric-label">Ingresos generados por el asistente</span>
-              <span class="metric-value kpi-value" id="kpi-revenue">—</span>
-            </div>
-            <div class="metric-card kpi-card">
-              <span class="metric-label">Pedidos totales</span>
-              <span class="metric-value kpi-value" id="kpi-orders-total">—</span>
-              <span class="kpi-sub" id="kpi-conversion">—</span>
-            </div>
-            <div class="metric-card kpi-card">
-              <span class="metric-label">Venta promedio</span>
-              <span class="metric-value kpi-value" id="kpi-avg-ticket">—</span>
-              <span class="kpi-sub">valor promedio por pedido</span>
-            </div>
             <div class="metric-card kpi-card">
               <span class="metric-label">Costo estimado en tokens</span>
               <span class="metric-value kpi-value" id="kpi-token-cost">—</span>
@@ -107,8 +124,28 @@
           </div>
 
           <div class="card">
-            <h2>Rentabilidad diaria: margen vs. costo del asistente</h2>
-            <span class="hint">Margen de ganancia (ingresos menos el costo de la mercancía vendida) comparado contra el costo de tokens, ambos en la MISMA escala (pesos COP). El costo de tokens se ve casi pegado al eje a propósito: así de poco cuesta operar el bot frente a lo que genera.</span>
+            <h2>Ingresos y ventas</h2>
+            <div class="kpi-grid">
+              <div class="metric-card kpi-card">
+                <span class="metric-label">Ingresos generados por el asistente</span>
+                <span class="metric-value kpi-value" id="kpi-revenue">—</span>
+              </div>
+              <div class="metric-card kpi-card">
+                <span class="metric-label">Pedidos totales</span>
+                <span class="metric-value kpi-value" id="kpi-orders-total">—</span>
+                <span class="kpi-sub" id="kpi-conversion">—</span>
+              </div>
+              <div class="metric-card kpi-card">
+                <span class="metric-label">Venta promedio</span>
+                <span class="metric-value kpi-value" id="kpi-avg-ticket">—</span>
+                <span class="kpi-sub">valor promedio por pedido</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Rentabilidad diaria: margen vs. costo del asistente en conversaciones que vendieron</h2>
+            <span class="hint">Margen de ganancia (ingresos menos el costo de la mercancía vendida) comparado contra el costo de tokens de las conversaciones que terminaron en venta, ambos en la MISMA escala (pesos COP). El costo de tokens se ve casi pegado al eje a propósito: así de poco cuesta operar el bot frente a lo que genera.</span>
             <div class="resumen-ratio-stat" id="resumen-ratio-stat">Calculando...</div>
             <div class="resumen-chart-range-selector" id="resumen-range-selector">
               <button type="button" class="range-btn" data-range="today">Hoy</button>
@@ -120,24 +157,7 @@
               <p class="admin-empty">Cargando gráfica...</p>
             </div>
             <p class="resumen-exclusion-note" id="resumen-exclusion-note" hidden></p>
-          </div>
-
-          <div class="resumen-secondary-grid">
-            <div class="card">
-              <h2>Conversaciones</h2>
-              <div class="conversations-breakdown" id="conversations-breakdown">
-                <p class="admin-empty">Cargando...</p>
-              </div>
-              <button type="button" class="btn-handoff btn-secondary btn-ver-todas" id="ver-todas-conversaciones-btn">Ver todas</button>
-            </div>
-
-            <div class="card">
-              <h2>Demanda no cubierta</h2>
-              <span class="hint">Productos que los clientes pidieron y no tenés en el catálogo. Una oportunidad de compra que se está perdiendo.</span>
-              <div id="demanda-no-cubierta" class="demanda-no-cubierta">
-                <p class="admin-empty">Cargando...</p>
-              </div>
-            </div>
+            <p class="resumen-exclusion-note" id="resumen-service-cost-note" hidden></p>
           </div>
         </section>
 

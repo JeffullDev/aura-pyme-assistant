@@ -1243,6 +1243,16 @@ body {
   border: 2px solid var(--brand);
 }
 
+/* ---------- Resumen: tarjetas prioritarias (atencion al cliente primero) ---------- */
+
+.card-prominent {
+  border: 2px solid var(--brand);
+}
+
+.card-prominent h2 {
+  font-size: 18px;
+}
+
 .kpi-value {
   font-size: 30px;
 }
@@ -1390,8 +1400,57 @@ body {
   gap: 16px;
 }
 
-.conversations-breakdown {
+.conversations-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
   margin-bottom: 12px;
+}
+
+.conversations-breakdown {
+  flex: 1;
+  min-width: 180px;
+  margin-bottom: 0;
+}
+
+.conversations-pie-chart {
+  flex: 0 0 auto;
+}
+
+.conversations-pie-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.conversations-pie-svg {
+  width: 140px;
+  height: 140px;
+}
+
+.conversations-pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.conversations-pie-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.conversations-pie-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  flex: none;
 }
 
 .breakdown-total {
@@ -1474,6 +1533,41 @@ body {
   color: var(--text-muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* ---------- Resumen: Lo que dice la gente ---------- */
+
+.voz-cliente-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.voz-cliente-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.voz-cliente-reasons li {
+  align-items: flex-start;
+}
+
+.voz-cliente-reasons .demanda-term {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-weight: 500;
+}
+
+.voz-cliente-reason-date {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  flex: none;
 }
 
 /* ---------- Pedidos ---------- */

@@ -131,6 +131,25 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "registrar_demanda_no_cubierta",
+        "description": (
+            "Registra un producto que el cliente pidió y que confirmaste que NO "
+            "está en el catálogo (después de usar search_catalog). Úsala SIEMPRE "
+            "antes de ofrecer una alternativa o escalar por falta de stock: así "
+            "el negocio sabe qué demanda está perdiendo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "producto": {
+                    "type": "string",
+                    "description": "Nombre del producto que el cliente pidió y no tenemos.",
+                }
+            },
+            "required": ["producto"],
+        },
+    },
+    {
         "name": "escalate_to_human",
         "description": (
             "Marca la conversación para que la atienda un humano. Úsala cuando el "
@@ -245,6 +264,13 @@ def execute_tool(
             user_identifier=user_identifier,
             order_reference=tool_input.get("order_reference"),
         )
+
+    if name == "registrar_demanda_no_cubierta":
+        producto = str(tool_input.get("producto", "")).strip()
+        if not producto:
+            return {"registered": False, "error": "Falta el nombre del producto."}
+        repository.log_unmet_demand(business_id, session_id, producto)
+        return {"registered": True, "producto": producto}
 
     if name == "escalate_to_human":
         repository.escalate_session(session_id)

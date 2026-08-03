@@ -371,11 +371,11 @@ def _count_escalated_sessions(session_ids: list[str]) -> int:
     return len({row["session_id"] for row in rows})
 
 
-def _classify_conversations(session_ids: list[str]) -> dict[str, int]:
-    """Categoria derivada de las tools llamadas en cada sesion, via message_log
-    (SIN llamadas extra al modelo). Precedencia exacta: si llamo create_order ->
-    'venta'; si no y llamo escalate_to_human -> 'escalada'; si no y llamo
-    get_policy con topic='garantia' -> 'garantia'; si no -> 'consulta'."""
+def _session_categories(session_ids: list[str]) -> dict[str, str]:
+    """Categoria por sesion derivada de las tools llamadas en cada una, via
+    message_log (SIN llamadas extra al modelo). Precedencia exacta: si llamo
+    create_order -> 'venta'; si no y llamo escalate_to_human -> 'escalada'; si
+    no y llamo get_policy con topic='garantia' -> 'garantia'; si no -> 'consulta'."""
     if not session_ids:
         return {}
 
@@ -401,50 +401,57 @@ def _classify_conversations(session_ids: list[str]) -> dict[str, int]:
         elif row["tool_name"] == "get_policy" and (row.get("tool_input") or {}).get("topic") == "garantia":
             warranty.add(sid)
 
-    counts: dict[str, int] = {}
+    categories: dict[str, str] = {}
     for session_id in session_ids:
         if session_id in created_order:
-            category = "venta"
+            categories[session_id] = "venta"
         elif session_id in escalated:
-            category = "escalada"
+            categories[session_id] = "escalada"
         elif session_id in warranty:
-            category = "garantia"
+            categories[session_id] = "garantia"
         else:
-            category = "consulta"
+            categories[session_id] = "consulta"
+    return categories
+
+
+def _classify_conversations(session_ids: list[str]) -> dict[str, int]:
+    """Cuenta de conversaciones por categoria, ver _session_categories."""
+    counts: dict[str, int] = {}
+    for category in _session_categories(session_ids).values():
         counts[category] = counts.get(category, 0) + 1
     return counts
 
 
-def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Demanda no cubierta: terminos que los clientes buscaron con search_catalog
-    y no encontraron nada. Se recorre message_log (la tool ya quedo registrada
-    con su tool_output original, que trae `count`) -- sin llamadas extra al
-    modelo. Top N por frecuencia, con la fecha del ultimo intento.
-
-    REVALIDACION (v1.3): tool_output.count quedo grabado en el momento de esa
-    busqueda historica. Si search_catalog tenia un bug (ej. no matcheaba
-    plurales) que ya se corrigio, un termino que hoy SI devuelve resultados
-    seguiria apareciendo como demanda no cubierta para siempre. Antes de
-    devolver cada termino se vuelve a correr contra el catalogo actual; si hoy
-    si hay resultados, se descarta."""
-    sessions = (
+def log_unmet_demand(business_id: str, session_id: str, producto: str) -> None:
+    """Registra un producto que el agente confirmo no tener, via la tool
+    registrar_demanda_no_cubierta (ver app/core/tools.py). Reemplaza la
+    inferencia anterior por count=0 de search_catalog (v1.4, ver
+    009_demanda.sql): la fuente de verdad es que el agente efectivamente le
+    dijo al cliente que no lo tenemos, no un intento de busqueda cualquiera."""
+    (
         get_supabase_client()
-        .table("chat_session")
-        .select("id")
-        .eq("business_id", business_id)
+        .table("unmet_demand")
+        .insert(
+            {
+                "business_id": business_id,
+                "session_id": session_id,
+                "producto": producto,
+            }
+        )
         .execute()
-        .data
     )
-    session_ids = [session["id"] for session in sessions]
-    if not session_ids:
-        return []
 
+
+def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Demanda no cubierta: productos que el agente registro explicitamente via
+    registrar_demanda_no_cubierta (tabla unmet_demand), agrupados por nombre
+    normalizado (lowercased) con conteo y fecha del ultimo intento. Top N por
+    frecuencia."""
     rows = (
         get_supabase_client()
-        .table("message_log")
-        .select("tool_input, tool_output, created_at")
-        .in_("session_id", session_ids)
-        .eq("tool_name", "search_catalog")
+        .table("unmet_demand")
+        .select("producto, created_at")
+        .eq("business_id", business_id)
         .execute()
         .data
     )
@@ -452,12 +459,7 @@ def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, An
     counts: dict[str, int] = {}
     last_asked: dict[str, datetime] = {}
     for row in rows:
-        tool_output = row.get("tool_output") or {}
-        # Solo terminos que devolvieron CERO resultados (count ausente o
-        # distinto de 0 no cuenta como demanda no cubierta).
-        if tool_output.get("count") != 0:
-            continue
-        term = str((row.get("tool_input") or {}).get("query", "")).strip().lower()
+        term = str(row.get("producto", "")).strip().lower()
         if not term:
             continue
         counts[term] = counts.get(term, 0) + 1
@@ -466,13 +468,84 @@ def get_uncovered_demand(business_id: str, limit: int = 10) -> list[dict[str, An
             last_asked[term] = created_at
 
     ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)
-    still_uncovered = [
-        (term, count) for term, count in ranked if not search_catalog(business_id, term, limit=1)
-    ]
     return [
         {"term": term, "count": count, "last_asked_at": last_asked[term].isoformat()}
-        for term, count in still_uncovered[:limit]
+        for term, count in ranked[:limit]
     ]
+
+
+def get_voice_of_customer(business_id: str, limit: int = 10) -> dict[str, Any]:
+    """'Lo que dice la gente' (v1.4): que le esta preguntando/pidiendo la gente
+    al agente, leido directamente de message_log (sin heuristicas nuevas, misma
+    fuente que _session_categories y get_uncovered_demand). Cuatro vistas:
+    - policy_topics: por que tema de politica preguntan mas (horario/domicilios/
+      garantia/pago), ya viene acotado por el enum de la tool.
+    - catalog_terms / knowledge_terms: que buscan en catalogo y en la base de
+      conocimiento, normalizado (lowercased/strip) y agrupado por termino exacto
+      -- no es NLP, es lo que el cliente escribio, agrupado literal.
+    - escalation_reasons: motivos de escalamiento MAS RECIENTES tal cual los
+      redacto el agente (texto libre, no se agrupan por ser casi siempre unicos).
+    """
+    sessions = (
+        get_supabase_client().table("chat_session").select("id").eq("business_id", business_id).execute().data
+    )
+    session_ids = [session["id"] for session in sessions]
+    if not session_ids:
+        return {"policy_topics": [], "catalog_terms": [], "knowledge_terms": [], "escalation_reasons": []}
+
+    rows = (
+        get_supabase_client()
+        .table("message_log")
+        .select("tool_name, tool_input, created_at")
+        .in_("session_id", session_ids)
+        .in_("tool_name", ["get_policy", "search_catalog", "search_knowledge", "escalate_to_human"])
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+    def _ranked_terms(tool_name: str, field: str) -> list[dict[str, Any]]:
+        counts: dict[str, int] = {}
+        for row in rows:
+            if row["tool_name"] != tool_name:
+                continue
+            term = str((row.get("tool_input") or {}).get(field, "")).strip().lower()
+            if not term:
+                continue
+            counts[term] = counts.get(term, 0) + 1
+        ranked = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)
+        return [{"term": term, "count": count} for term, count in ranked[:limit]]
+
+    topic_counts: dict[str, int] = {}
+    for row in rows:
+        if row["tool_name"] != "get_policy":
+            continue
+        topic = str((row.get("tool_input") or {}).get("topic", "")).strip().lower()
+        if not topic:
+            continue
+        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    policy_topics = [
+        {"topic": topic, "count": count}
+        for topic, count in sorted(topic_counts.items(), key=lambda pair: pair[1], reverse=True)
+    ]
+
+    escalation_reasons = []
+    for row in rows:
+        if row["tool_name"] != "escalate_to_human":
+            continue
+        reason = str((row.get("tool_input") or {}).get("reason", "")).strip()
+        if not reason:
+            continue
+        escalation_reasons.append({"reason": reason, "created_at": row["created_at"]})
+        if len(escalation_reasons) >= limit:
+            break
+
+    return {
+        "policy_topics": policy_topics,
+        "catalog_terms": _ranked_terms("search_catalog", "query"),
+        "knowledge_terms": _ranked_terms("search_knowledge", "query"),
+        "escalation_reasons": escalation_reasons,
+    }
 
 
 def get_business_stats(business_id: str) -> dict[str, Any]:
@@ -807,24 +880,40 @@ def get_daily_summary(business_id: str) -> dict[str, Any]:
     de antes de la migracion 007_margenes.sql), el pedido se EXCLUYE por
     completo del margen en vez de asumir costo 0 -- lo contrario inflaria el
     margen mostrado. excluded_orders_count informa cuantos pedidos se
-    excluyeron por este motivo para que el frontend pueda avisarlo."""
+    excluyeron por este motivo para que el frontend pueda avisarlo.
+
+    RENTABILIDAD SOLO SOBRE VENTAS (v1.4): el margen (de orders) siempre fue
+    solo de conversaciones que terminaron en venta. Pero el costo de tokens
+    comparado en la grafica antes sumaba TODAS las conversaciones (consultas,
+    garantias, escaladas que nunca compraron), lo que inflaba artificialmente
+    el costo frente al margen y volvia el ratio "$X de margen por $1 de token"
+    poco honesto. Ahora token_cost en la serie diaria es SOLO el costo de
+    sesiones categoria 'venta' (ver _session_categories); el costo de servir
+    al resto de conversaciones (que sigue siendo un costo real del negocio,
+    solo que no atribuible a una venta puntual) se reporta aparte en
+    service_cost_other_conversations."""
     sessions = (
         get_supabase_client().table("chat_session").select("id").eq("business_id", business_id).execute().data
     )
     session_ids = [session["id"] for session in sessions]
+    categories = _session_categories(session_ids)
 
     token_cost_by_date: dict[str, float] = {}
     token_dates: list[str] = []
+    service_cost_other_conversations = 0.0
     if session_ids:
         usage_rows = (
             get_supabase_client()
             .table("token_usage")
-            .select("created_at, estimated_cost")
+            .select("session_id, created_at, estimated_cost")
             .in_("session_id", session_ids)
             .execute()
             .data
         )
         for row in usage_rows:
+            if categories.get(row["session_id"]) != "venta":
+                service_cost_other_conversations += row["estimated_cost"]
+                continue
             date_key = row["created_at"][:10]
             token_cost_by_date[date_key] = token_cost_by_date.get(date_key, 0.0) + row["estimated_cost"]
             token_dates.append(date_key)
@@ -888,4 +977,5 @@ def get_daily_summary(business_id: str) -> dict[str, Any]:
             for date_key in dates
         ],
         "excluded_orders_count": len(excluded_order_ids),
+        "service_cost_other_conversations": round(service_cost_other_conversations, 6),
     }

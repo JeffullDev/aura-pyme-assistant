@@ -155,6 +155,12 @@ def daily_summary() -> dict:
     return repository.get_daily_summary(business_id)
 
 
+@router.get("/voz-del-cliente")
+def voice_of_customer() -> dict:
+    business_id = repository.get_business()["id"]
+    return repository.get_voice_of_customer(business_id)
+
+
 @router.get("/inventory")
 def inventory() -> list[dict]:
     # Stock numerico real, sin enmascarar: este endpoint es para el dueno del

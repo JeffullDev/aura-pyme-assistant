@@ -99,3 +99,77 @@ function buildResumenChart(dailyData) {
 
   return `${legend}<div class="resumen-chart-svg-wrapper">${svg}</div>`;
 }
+
+// ---------- Pie chart de desglose de conversaciones (SVG puro, sin librerias) ----------
+// Junto a la tarjeta "Conversaciones atendidas" del Resumen (v1.4): mismos datos que
+// conversations-breakdown (stats.conversations_by_category), solo que en forma visual.
+
+const CONVERSATIONS_PIE_COLORS = {
+  venta: "#16a34a",
+  garantia: "#7c3aed",
+  escalada: "#fb923c",
+  consulta: "#2563eb",
+  abandoned: "#9ca3af",
+  closed: "#6b7280",
+};
+
+const CONVERSATIONS_PIE_ORDER = ["venta", "garantia", "escalada", "consulta", "abandoned", "closed"];
+
+function conversationsPiePoint(cx, cy, r, angle) {
+  const x = cx + r * Math.cos(angle);
+  const y = cy + r * Math.sin(angle);
+  return `${x.toFixed(2)},${y.toFixed(2)}`;
+}
+
+function buildConversationsPieChart(byCategory, labels) {
+  const slices = CONVERSATIONS_PIE_ORDER.map((key) => ({
+    key,
+    count: byCategory[key] || 0,
+  })).filter((slice) => slice.count > 0);
+
+  const total = slices.reduce((sum, slice) => sum + slice.count, 0);
+  if (total === 0) {
+    return '<p class="admin-empty">Sin conversaciones todavía.</p>';
+  }
+
+  const size = 160;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2;
+  const TAU = Math.PI * 2;
+
+  let angle = -Math.PI / 2;
+  const paths = slices
+    .map((slice) => {
+      const sweep = (slice.count / total) * TAU;
+      const startAngle = angle;
+      const endAngle = angle + sweep;
+      angle = endAngle;
+
+      // Una sola categoria con el 100%: un circulo completo, no un arco (un
+      // path con largeArc de 360 grados exactos degenera a un punto).
+      if (slice.count === total) {
+        return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${CONVERSATIONS_PIE_COLORS[slice.key]}"><title>${labels[slice.key]}: ${slice.count}</title></circle>`;
+      }
+
+      const largeArc = sweep > Math.PI ? 1 : 0;
+      const start = conversationsPiePoint(cx, cy, r, startAngle);
+      const end = conversationsPiePoint(cx, cy, r, endAngle);
+      const d = `M${cx},${cy} L${start} A${r},${r} 0 ${largeArc} 1 ${end} Z`;
+      return `<path d="${d}" fill="${CONVERSATIONS_PIE_COLORS[slice.key]}"><title>${labels[slice.key]}: ${slice.count}</title></path>`;
+    })
+    .join("");
+
+  const svg = `<svg viewBox="0 0 ${size} ${size}" class="conversations-pie-svg" role="img" aria-label="Desglose de conversaciones">${paths}</svg>`;
+
+  const legend = `<div class="conversations-pie-legend">
+    ${slices
+      .map(
+        (slice) =>
+          `<span class="conversations-pie-legend-item"><span class="conversations-pie-legend-swatch" style="background:${CONVERSATIONS_PIE_COLORS[slice.key]}"></span>${labels[slice.key]} (${slice.count})</span>`
+      )
+      .join("")}
+  </div>`;
+
+  return `<div class="conversations-pie-wrapper">${svg}${legend}</div>`;
+}

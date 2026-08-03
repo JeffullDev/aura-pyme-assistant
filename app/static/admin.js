@@ -40,6 +40,13 @@ const CONVERSATION_CATEGORY_LABELS = {
   closed: "Cerradas",
 };
 
+const POLICY_TOPIC_LABELS = {
+  horario: "Horario",
+  domicilios: "Domicilios",
+  garantia: "Garantía",
+  pago: "Pago",
+};
+
 const VIEW_TITLES = {
   resumen: "Resumen",
   conversations: "Conversaciones",
@@ -89,9 +96,12 @@ const resumenChartEl = document.getElementById("resumen-chart");
 const resumenRangeSelectorEl = document.getElementById("resumen-range-selector");
 const resumenRatioStatEl = document.getElementById("resumen-ratio-stat");
 const resumenExclusionNoteEl = document.getElementById("resumen-exclusion-note");
+const resumenServiceCostNoteEl = document.getElementById("resumen-service-cost-note");
 const conversationsBreakdownEl = document.getElementById("conversations-breakdown");
+const conversationsPieChartEl = document.getElementById("conversations-pie-chart");
 const verTodasConversacionesBtnEl = document.getElementById("ver-todas-conversaciones-btn");
 const demandaNoCubiertaEl = document.getElementById("demanda-no-cubierta");
+const vozDelClienteEl = document.getElementById("voz-del-cliente");
 
 const ordersFiltersEl = document.getElementById("orders-filters");
 const ordersBoardEl = document.getElementById("orders-board");
@@ -411,6 +421,8 @@ function renderConversationsBreakdown(stats) {
     <div class="breakdown-total"><span class="breakdown-total-value">${formatTokens(stats.total_conversations)}</span> conversaciones totales</div>
     <div class="breakdown-rows">${rows}</div>
   `;
+
+  conversationsPieChartEl.innerHTML = buildConversationsPieChart(byCategory, CONVERSATION_CATEGORY_LABELS);
 }
 
 async function loadUncoveredDemand() {
@@ -434,6 +446,61 @@ async function loadUncoveredDemand() {
     `;
   } catch (err) {
     demandaNoCubiertaEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar la demanda no cubierta.</p>';
+  }
+}
+
+function renderVozClienteTermList(title, items, emptyText) {
+  const rows = items
+    .map(
+      (item) =>
+        `<div class="breakdown-row"><span class="breakdown-label">${escapeHtml(item.term)}</span><span class="breakdown-value">${item.count}</span></div>`
+    )
+    .join("");
+  return `
+    <div class="voz-cliente-section">
+      <h3>${title}</h3>
+      ${items.length === 0 ? `<p class="admin-empty">${emptyText}</p>` : `<div class="breakdown-rows">${rows}</div>`}
+    </div>
+  `;
+}
+
+async function loadVoiceOfCustomer() {
+  vozDelClienteEl.innerHTML = '<p class="admin-empty">Cargando...</p>';
+  try {
+    const data = await fetchJson("/admin/voz-del-cliente");
+    const policyTopics = data.policy_topics || [];
+    const catalogTerms = data.catalog_terms || [];
+    const knowledgeTerms = data.knowledge_terms || [];
+    const escalationReasons = data.escalation_reasons || [];
+
+    const policyRows = policyTopics
+      .map(
+        (item) =>
+          `<div class="breakdown-row"><span class="breakdown-label">${POLICY_TOPIC_LABELS[item.topic] || escapeHtml(item.topic)}</span><span class="breakdown-value">${item.count}</span></div>`
+      )
+      .join("");
+
+    const escalationRows = escalationReasons
+      .map(
+        (item) =>
+          `<li><span class="demanda-term">${escapeHtml(item.reason)}</span><span class="voz-cliente-reason-date">${formatDate(item.created_at)}</span></li>`
+      )
+      .join("");
+
+    vozDelClienteEl.innerHTML = `
+      <div class="voz-cliente-section">
+        <h3>Temas de política más consultados</h3>
+        ${policyTopics.length === 0 ? '<p class="admin-empty">Sin consultas todavía.</p>' : `<div class="breakdown-rows">${policyRows}</div>`}
+      </div>
+      ${renderVozClienteTermList("Productos más buscados", catalogTerms, "Sin búsquedas todavía.")}
+      ${renderVozClienteTermList("Preguntas a la base de conocimiento", knowledgeTerms, "Sin búsquedas todavía.")}
+      <div class="voz-cliente-section">
+        <h3>Motivos de escalamiento recientes</h3>
+        ${escalationReasons.length === 0 ? '<p class="admin-empty">Sin escalamientos todavía.</p>' : `<ol class="demanda-list voz-cliente-reasons">${escalationRows}</ol>`}
+      </div>
+    `;
+  } catch (err) {
+    vozDelClienteEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar "Lo que dice la gente".</p>';
   }
 }
 
@@ -486,6 +553,13 @@ async function loadResumenChart() {
     } else {
       resumenExclusionNoteEl.hidden = true;
     }
+    const serviceCostOther = data.service_cost_other_conversations || 0;
+    if (serviceCostOther > 0) {
+      resumenServiceCostNoteEl.textContent = `Además, el negocio gastó ${formatCopWithUsd(serviceCostOther)} en tokens atendiendo conversaciones que no terminaron en venta (consultas, garantías, escalas) — un costo real de servicio, no incluido en la gráfica de arriba.`;
+      resumenServiceCostNoteEl.hidden = false;
+    } else {
+      resumenServiceCostNoteEl.hidden = true;
+    }
     renderResumenChartForRange();
   } catch (err) {
     resumenChartEl.innerHTML = '<p class="admin-empty admin-error">No se pudo cargar la gráfica.</p>';
@@ -511,6 +585,7 @@ async function loadSummary() {
 
   loadResumenChart();
   loadUncoveredDemand();
+  loadVoiceOfCustomer();
 }
 
 verTodasConversacionesBtnEl.addEventListener("click", () => switchAdminView("conversations"));
