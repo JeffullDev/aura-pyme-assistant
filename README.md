@@ -59,7 +59,7 @@ política o estado de pedido, y prohíbe inventar cuando la herramienta no
 devuelve nada. Los precios y el stock viven en Supabase, no en el prompt ni en
 la memoria del modelo.
 
-Las herramientas registradas hoy en `app/core/tools.py` (7 en total):
+Las herramientas registradas hoy en `app/core/tools.py` (8 en total):
 
 - **`search_catalog`** — busca productos por nombre, categoría o palabra
   clave. Obligatoria antes de responder sobre precio, disponibilidad o
@@ -74,6 +74,10 @@ Las herramientas registradas hoy en `app/core/tools.py` (7 en total):
   total (con envío) antes de llamarla.
 - **`check_order_status`** — consulta estado y hora estimada de entrega de los
   pedidos del cliente.
+- **`registrar_demanda_no_cubierta`** — registra un producto que el cliente
+  pidió y que `search_catalog` confirmó que no está en el catálogo. El system
+  prompt exige llamarla ANTES de ofrecer una alternativa o escalar por falta
+  de stock; es la fuente de la sección "Demanda no cubierta" del panel (v1.4).
 - **`escalate_to_human`** — marca la conversación para que la atienda una
   persona.
 - **`close_conversation`** — cierra la conversación cuando el cliente confirma
@@ -142,15 +146,40 @@ implementado — ver [Límites conocidos](#límites-conocidos).
 
 **Quién lo usa:** el dueño o administrador del negocio entra a `/admin` para
 ver el panorama completo — todas las conversaciones, pedidos, el catálogo con
-stock real, demanda no cubierta (términos que los clientes buscaron y el
-catálogo no resolvió) y la rentabilidad diaria. El equipo de atención (o el
-mismo dueño, en un negocio pequeño) usa el panel para tomar conversaciones
-escaladas y responderlas directamente.
+stock real, demanda no cubierta, qué dice la gente y la rentabilidad diaria.
+El equipo de atención (o el mismo dueño, en un negocio pequeño) usa el panel
+para tomar conversaciones escaladas y responderlas directamente.
 
-**Cuándo interviene una persona y qué revisa:** el dueño revisa periódicamente
-la sección de demanda no cubierta (productos que la gente pide y no existen
-en el catálogo — señal de oportunidad de inventario) y la de rentabilidad
-diaria. Un agente humano interviene cuando el bot escala una conversación.
+**Cuándo interviene una persona y qué revisa:** el dueño revisa
+periódicamente la sección de demanda no cubierta (productos que la gente pide
+y no existen en el catálogo — señal de oportunidad de inventario) y la de
+rentabilidad diaria. Un agente humano interviene cuando el bot escala una
+conversación.
+
+**Demanda no cubierta (v1.4).** Productos que el agente confirmó que no
+están en el catálogo, registrados explícitamente vía la tool
+`registrar_demanda_no_cubierta` — no una inferencia sobre búsquedas con cero
+resultados (ver el incidente correspondiente en la sección de qué falló). El
+system prompt exige llamarla antes de ofrecer una alternativa o escalar por
+falta de stock, así que la fuente de verdad es "el agente le dijo al cliente
+que no lo tenemos", no un intento de búsqueda cualquiera.
+
+**"Lo que dice la gente" (v1.4).** Sección del panel (`GET
+/admin/voz-del-cliente`) que agrega, directo de `message_log` y sin ninguna
+llamada extra al modelo, qué le pregunta y pide la gente al agente: temas de
+política más consultados (horario/domicilios/garantía/pago), términos de
+búsqueda en catálogo y en la base de conocimiento, y los motivos de
+escalamiento más recientes tal como los redactó el agente.
+
+**Cómo se calcula la rentabilidad (v1.4).** La gráfica de rentabilidad diaria
+compara margen de ganancia contra costo de tokens **solo de conversaciones
+que terminaron en venta** (categoría `venta`, ver `_session_categories()` en
+`repository.py`). El costo de tokens de servir el resto de conversaciones
+(consultas, garantías, escaladas que nunca compraron) sigue siendo un costo
+real del negocio, pero se reporta aparte
+(`service_cost_other_conversations`) en vez de mezclarse con el costo
+atribuible a una venta — comparar margen contra el costo de *todas* las
+conversaciones inflaba artificialmente el costo frente al margen mostrado.
 
 **Flujo completo de escalamiento (handoff):**
 1. El cliente pide hablar con una persona, o el bot detecta que no puede
@@ -166,9 +195,18 @@ diaria. Un agente humano interviene cuando el bot escala una conversación.
    se sigue registrando (trazabilidad intacta), pero no hay respuesta
    automática superpuesta a la del humano.
 5. El agente humano responde desde el panel; el cliente ve esas respuestas
-   por polling (`GET /chat/{session_id}/messages`).
+   por polling (`GET /chat/{session_id}/messages`), que devuelve el `status`
+   de la sesión junto con los mensajes.
 6. El agente puede devolver la conversación al bot (`/return-to-bot`) o
-   cerrarla (`/close`).
+   cerrarla (`/close`). Si cierra, el cliente lo ve **en vivo** del lado del
+   chat (widget y página completa): banner de cierre, input deshabilitado,
+   indicador de estado "offline" y el botón "Nueva conversación" resaltado —
+   no tiene que refrescar para enterarse. Las sesiones `closed`/`abandoned`
+   quedan de solo lectura en el panel de admin (no se puede responder ni
+   tomarlas). Si el cliente escribe de nuevo en una sesión ya cerrada, se abre
+   una sesión nueva de forma transparente (`agent_service.py`) y el frontend
+   detecta el cambio de `session_id` para resetear el hilo visible en vez de
+   mostrarlo como continuación de la conversación vieja.
 
 ## Límites conocidos
 
@@ -263,11 +301,11 @@ Ya se verificó que funciona desde un clon limpio — estos pasos son exactos.
 2. **Configurar `.env`** (copiar `.env.example`) con las 3 variables
    requeridas: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`.
    `ALLOWED_ORIGINS` y `CLAUDE_MODEL` son opcionales.
-3. **Correr las 8 migraciones, en orden, contra tu proyecto de Supabase**
+3. **Correr las 9 migraciones, en orden, contra tu proyecto de Supabase**
    (copiar y ejecutar cada archivo en el SQL editor de Supabase):
    `001_init.sql`, `002_token_usage.sql`, `003_business_config.sql`,
    `004_knowledge.sql`, `005_orders.sql`, `006_handoff.sql`,
-   `007_margenes.sql`, `008_abandoned_status.sql`.
+   `007_margenes.sql`, `008_abandoned_status.sql`, `009_demanda.sql`.
 4. **Sembrar datos de ejemplo:**
    ```
    ./venv/Scripts/python.exe scripts/seed.py
@@ -344,6 +382,24 @@ revalidando cada término contra el catálogo actual antes de devolverlo
 (`get_uncovered_demand()` en `repository.py`): si hoy sí hay resultados, se
 descarta.
 
+**(v1.4) Arreglar la búsqueda de plurales rompió en silencio "demanda no
+cubierta".** El criterio de esa sección era "búsquedas de `search_catalog`
+con `count: 0`". Cuando se corrigió el bug de plurales de arriba
+(`_singularize()`/`_search_terms()`), la búsqueda pasó a ser tokenizada y
+mucho más permisiva — y una búsqueda tokenizada casi nunca devuelve cero
+resultados, aunque el producto pedido genuinamente no exista (basta con que
+comparta una palabra con cualquier otro producto del catálogo). El reporte de
+demanda no cubierta simplemente dejó de recibir datos nuevos, sin ningún
+error visible: arreglar una cosa rompió otra en silencio, porque las dos
+dependían del mismo criterio de texto. Se corrigió reemplazando el
+heurístico por completo: en vez de inferir demanda no cubierta releyendo
+`tool_output` de búsquedas pasadas, el agente ahora llama una tool explícita
+(`registrar_demanda_no_cubierta`, ver más arriba) cuando confirma que un
+producto no está — la fuente de verdad deja de ser "una búsqueda que no
+matcheó nada" y pasa a ser "el agente efectivamente le dijo al cliente que no
+lo tenemos", sin depender de ningún efecto colateral del algoritmo de
+búsqueda.
+
 **El stock exacto llegaba al modelo.** La primera versión de
 `search_catalog` devolvía el campo `stock` numérico crudo en el
 `tool_output`. Se corrigió en la capa de datos, no con una instrucción de
@@ -351,6 +407,25 @@ prompt: `_sanitize_catalog_item()` en `app/core/tools.py` reemplaza el número
 por una categoría (`stock_status`) antes de que el resultado salga hacia
 Claude — así el dato nunca está disponible para que un prompt injection lo
 extraiga, sin depender de que el modelo "decida" no repetirlo.
+
+**Tres bugs de sincronización de estado en el handoff, encontrados juntos.**
+El chat público y el panel de admin llevaban el estado de la sesión cada uno
+por su lado, y se desincronizaban en tres formas distintas: (1) la lista de
+sesiones y el hilo abierto parpadeaban en cada refresco del panel; (2) una
+sesión `closed`/`abandoned` seguía siendo editable en el panel — se podía
+tomar o responder una conversación ya terminada; (3) si un agente humano
+cerraba la conversación, el cliente del lado del chat nunca se enteraba: el
+polling público no devolvía el `status` de la sesión, solo los mensajes, así
+que la página seguía mostrando el input activo como si la conversación
+siguiera abierta. Se corrigió devolviendo `status` en el polling público
+(`chat.py`), marcando las sesiones terminales como solo lectura en el panel
+(`admin.py`/`admin.js`), y haciendo que el frontend del chat reaccione en
+vivo al cierre (banner, input deshabilitado, indicador offline). Efecto
+colateral encontrado en el mismo arreglo: `widget.js` (la versión embebible)
+nunca había recibido el fix de handoff anterior y estaba desincronizado de
+`script.js` — incluía además un bug preexistente donde el polling del widget
+nunca leía el `status` de la respuesta. Los tres bugs y el desfase de
+`widget.js` se corrigieron en el mismo commit.
 
 **Nota de precisión sobre un punto que la consigna original mencionaba** ("el
 bot seguía respondiendo después de escalar a un humano"): revisando el
@@ -367,7 +442,7 @@ documenta aquí tal como ocurrió en el repo, no como un incidente separado de
 - Artifact (calculadora de costo): `docs/artifact_calculadora_roi.html`
 - Reporte de QA: `docs/qa_report.md`
 - Reporte de auditoría de seguridad: `docs/security_audit.md`
-- Migraciones: `db/migrations/001_init.sql` a `008_abandoned_status.sql`
+- Migraciones: `db/migrations/001_init.sql` a `009_demanda.sql`
 - Script de siembra de datos: `scripts/seed.py` y `scripts/load_knowledge.py`
 
 ## Stack y decisiones técnicas
@@ -396,5 +471,7 @@ documenta aquí tal como ocurrió en el repo, no como un incidente separado de
   de precio y nombre al momento de la compra, para que un cambio posterior de
   precio no altere pedidos ya hechos), `chat_session` / `message_log`
   (trazabilidad completa, incluyendo filas `role='tool'` con
-  `tool_name`/`tool_input`/`tool_output`). Todas las claves primarias son
+  `tool_name`/`tool_input`/`tool_output`), `unmet_demand` (v1.4: un producto
+  registrado cada vez que el agente confirma que no lo tiene, ver
+  `registrar_demanda_no_cubierta`). Todas las claves primarias son
   UUID.
