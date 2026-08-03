@@ -23,6 +23,21 @@ A pesar del crecimiento, la filosofía sigue siendo la misma que tenía don
 Gilberto: cada cliente se va con la solución correcta, no con la venta más
 cara.
 
+## Nuestra dirección y cómo llegar
+
+Muchos clientes preguntan por la direccion o la ubicacion del local, a veces
+sin tilde tal como se escribe rápido en el chat: la dirección exacta de
+El Tornillo Feliz es Cra. 45 #12-30, Barrio Restrepo, Bogotá.
+
+El local está sobre una vía principal del barrio, a pocas cuadras del parque
+central de Restrepo, con fachada amarilla y el aviso clásico del negocio —
+fácil de identificar para quien nunca ha venido. Si vienes en transporte
+público, el paradero más cercano queda a menos de dos cuadras caminando.
+
+Puedes visitarnos en el local en el mismo horario de atención del negocio, y
+también recoger ahí un pedido hecho por el chat si prefieres no esperar el
+domicilio.
+
 ## Nuestros valores y compromiso con el cliente
 
 En El Tornillo Feliz creemos que la ferretería de barrio tiene una ventaja que

@@ -106,10 +106,14 @@ def search_catalog(
 def search_knowledge_base(
     business_id: str,
     query: str,
-    limit: int = 3,
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     """Busqueda ILIKE sobre title/content, mismo enfoque que search_catalog: se
-    prefiere recall sobre precision para contenido narrativo (guias, consejos)."""
+    prefiere recall sobre precision para contenido narrativo (guias, consejos).
+    Sin ORDER BY por relevancia (no hay ranking): un limit bajo puede dejar
+    afuera una seccion relevante si hay otras mas "viejas" con match parcial
+    (paso con la seccion de direccion agregada en knowledge/tornillo_feliz.md,
+    que quedaba fuera del top-3 aunque matcheaba la query real del modelo)."""
     terms = _search_terms(query)
     if not terms:
         return []
